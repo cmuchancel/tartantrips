@@ -84,6 +84,47 @@ const addHours = (dateValue: Date, hours: number) => {
   return new Date(dateValue.getTime() + hours * 60 * 60 * 1000);
 };
 
+const diffMinutes = (dateValue: string, timeA: string, timeB: string) => {
+  const a = toDateTimeEST(dateValue, timeA);
+  const b = toDateTimeEST(dateValue, timeB);
+
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.abs(a.getTime() - b.getTime());
+};
+
+const formatTime12h = (timeValue: string) => {
+  const [hourRaw, minuteRaw = "0"] = timeValue.split(":");
+  const hourNum = Number(hourRaw);
+  const minuteNum = Number(minuteRaw);
+
+  if (Number.isNaN(hourNum) || Number.isNaN(minuteNum)) {
+    return timeValue;
+  }
+
+  const period = hourNum >= 12 ? "PM" : "AM";
+  const normalizedHour = hourNum % 12 || 12;
+  const paddedMinute = minuteNum.toString().padStart(2, "0");
+  return `${normalizedHour}:${paddedMinute} ${period}`;
+};
+
+const formatDateLong = (dateValue: string) => {
+  const [year, month, day] = dateValue.split("-").map(Number);
+  if (!year || !month || !day) {
+    return dateValue;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC"
+  });
+};
+
 const allowsSex = (allowed: string, partnerSex: string) => {
   if (!allowed || allowed === "Any") {
     return true;
@@ -135,6 +176,7 @@ export default function DashboardPage() {
   const [editingTripId, setEditingTripId] = useState<string | null>(null);
   const [matchesByTrip, setMatchesByTrip] = useState<Record<string, TripRecord[]>>({});
   const [loadingMatches, setLoadingMatches] = useState(false);
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
 
   const isArrival = form.direction === "Arriving to Pittsburgh";
   const isDeparture = form.direction === "Departing Pittsburgh";
@@ -188,7 +230,7 @@ export default function DashboardPage() {
           const { data, error: matchError } = await supabase
             .from("trips")
             .select(
-              "id,user_email,name,sex,direction,flight_date,flight_time,allowed_partner_sex,window_start,window_end,created_at"
+              "id,user_email,name,sex,graduation_year,major,direction,flight_date,flight_time,allowed_partner_sex,window_start,window_end,created_at"
             )
             .eq("direction", trip.direction)
             .eq("flight_date", trip.flight_date)
@@ -207,6 +249,10 @@ export default function DashboardPage() {
             const candidateAllowsCurrent = allowsSex(candidate.allowed_partner_sex, trip.sex);
 
             return currentAllowsCandidate && candidateAllowsCurrent;
+          }).sort((a, b) => {
+            const aDiff = diffMinutes(trip.flight_date, trip.flight_time, a.flight_time);
+            const bDiff = diffMinutes(trip.flight_date, trip.flight_time, b.flight_time);
+            return aDiff - bDiff;
           });
 
           return [trip.id, filtered] as const;
@@ -462,6 +508,28 @@ export default function DashboardPage() {
 
   const dateLabel = isArrival ? "Arrival date" : "Departure date";
   const timeLabel = isArrival ? "Flight arrival time" : "Flight departure time";
+  const buildEmailSubject = (tripDate: string) => {
+    return `Airport ride share – CMU trip on ${tripDate}`;
+  };
+  const buildEmailBody = (match: TripRecord, trip: TripRecord) => {
+    const tripTime = formatTime12h(normalizeTime(trip.flight_time));
+    const formattedDate = formatDateLong(trip.flight_date);
+    const directionPhrase =
+      trip.direction === "Arriving to Pittsburgh"
+        ? "arriving in Pittsburgh"
+        : "departing from Pittsburgh";
+    const routePhrase =
+      trip.direction === "Arriving to Pittsburgh" ? "from the airport" : "to the airport";
+
+    return `Hi ${match.name},\n\nI saw that we matched on TartanTrips and that we’re both ${directionPhrase}\naround ${tripTime} on ${formattedDate}.\n\nWould you be interested in sharing a ride ${routePhrase}?\nIf so, I’m happy to coordinate details.\n\nBest,\n${trip.name}\n`;
+  };
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (copyError) {
+      setError("Unable to copy to clipboard. Please copy manually.");
+    }
+  };
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-white px-6 py-12">
@@ -764,7 +832,11 @@ export default function DashboardPage() {
               ) : (
                 <div className="mt-4 space-y-4">
                   {trips.map((trip) => {
-                    const tripMatches = matchesByTrip[trip.id] ?? [];
+                    const tripMatches = (matchesByTrip[trip.id] ?? []).slice().sort((a, b) => {
+                      const aDiff = diffMinutes(trip.flight_date, trip.flight_time, a.flight_time);
+                      const bDiff = diffMinutes(trip.flight_date, trip.flight_time, b.flight_time);
+                      return aDiff - bDiff;
+                    });
 
                     return (
                       <div
@@ -816,13 +888,86 @@ export default function DashboardPage() {
                                   key={match.id}
                                   className="rounded-md border border-slate-200 bg-white p-3"
                                 >
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {match.name}
-                                  </p>
-                                  <p className="text-xs text-slate-600">
-                                    {match.direction} · {match.flight_date} at {normalizeTime(match.flight_time)}
-                                  </p>
-                                  <p className="text-xs text-slate-600">Sex: {match.sex}</p>
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-semibold text-slate-900">
+                                        {match.name}
+                                      </p>
+                                      <p className="text-xs text-slate-600">
+                                        {match.direction} · {match.flight_date} at {normalizeTime(match.flight_time)}
+                                      </p>
+                                      <p className="text-xs text-slate-600">Sex: {match.sex}</p>
+                                      <p className="text-xs text-slate-600">
+                                        Major: {match.major || "Not provided"} · Year: {match.graduation_year || "N/A"}
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                                      onClick={() =>
+                                        setExpandedMatchId(
+                                          expandedMatchId === match.id ? null : match.id
+                                        )
+                                      }
+                                    >
+                                      Send an email
+                                    </button>
+                                  </div>
+                                  {expandedMatchId === match.id ? (
+                                    <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                                      <div className="flex flex-col gap-2">
+                                        <div>
+                                          <p className="text-xs font-semibold text-slate-600">Email</p>
+                                          <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
+                                            <input
+                                              type="text"
+                                              value={match.user_email}
+                                              readOnly
+                                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                                              onFocus={(event) => event.target.select()}
+                                            />
+                                            <button
+                                              type="button"
+                                              className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-900 hover:bg-white"
+                                              onClick={() => handleCopy(match.user_email)}
+                                            >
+                                              Copy email
+                                            </button>
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs font-semibold text-slate-600">Message</p>
+                                          <textarea
+                                            readOnly
+                                            rows={6}
+                                            className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-xs text-slate-900"
+                                            value={buildEmailBody(match, trip)}
+                                          />
+                                          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                                            <button
+                                              type="button"
+                                              className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-900 hover:bg-white"
+                                              onClick={() => handleCopy(buildEmailBody(match, trip))}
+                                            >
+                                              Copy message
+                                            </button>
+                                            <a
+                                              className="inline-flex items-center justify-center rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-900 hover:bg-white"
+                                              href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
+                                                match.user_email
+                                              )}&su=${encodeURIComponent(
+                                                buildEmailSubject(trip.flight_date)
+                                              )}&body=${encodeURIComponent(buildEmailBody(match, trip))}`}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                            >
+                                              Open in Gmail
+                                            </a>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : null}
                                 </div>
                               ))}
                             </div>
