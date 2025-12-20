@@ -1,15 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
 const CMU_EMAIL_REGEX = /@([a-z0-9-]+\.)*cmu\.edu$/i;
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const acceptMagicLink = async () => {
+      const hash = window.location.hash.replace(/^#/, "");
+      const params = new URLSearchParams(hash);
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
+
+      if (!accessToken || !refreshToken) {
+        return;
+      }
+
+      const { error: setSessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
+
+      if (setSessionError) {
+        setError(setSessionError.message);
+        return;
+      }
+
+      router.replace("/dashboard");
+    };
+
+    acceptMagicLink();
+  }, [router]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
