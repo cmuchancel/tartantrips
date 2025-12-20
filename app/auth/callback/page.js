@@ -12,16 +12,44 @@ export default function AuthCallbackPage() {
     const exchangeCode = async () => {
       const code = searchParams.get("code");
 
-      if (!code) {
-        router.replace("/login");
-        return;
-      }
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          router.replace("/login");
+          return;
+        }
+      } else {
+        const auth = supabase.auth;
 
-      if (error) {
-        router.replace("/login");
-        return;
+        if (typeof auth.getSessionFromUrl === "function") {
+          const { error } = await auth.getSessionFromUrl();
+
+          if (error) {
+            router.replace("/login");
+            return;
+          }
+        } else {
+          const hash = window.location.hash.replace(/^#/, "");
+          const params = new URLSearchParams(hash);
+          const accessToken = params.get("access_token");
+          const refreshToken = params.get("refresh_token");
+
+          if (accessToken && refreshToken && typeof auth.setSession === "function") {
+            const { error } = await auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken
+            });
+
+            if (error) {
+              router.replace("/login");
+              return;
+            }
+          } else {
+            router.replace("/login");
+            return;
+          }
+        }
       }
 
       router.replace("/dashboard");

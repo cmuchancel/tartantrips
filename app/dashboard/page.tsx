@@ -27,13 +27,15 @@ export default function DashboardPage() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    router.replace("/login");
+    router.replace("/");
   };
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-white px-6">
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">
+          TartanTrips Dashboard
+        </h1>
         {loading ? (
           <p className="mt-4 text-sm text-slate-600">Loading your session...</p>
         ) : (
@@ -41,6 +43,12 @@ export default function DashboardPage() {
             <p className="text-sm text-slate-700">
               Signed in as <span className="font-medium">{email}</span>
             </p>
+            <button
+              type="button"
+              className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              Create a trip
+            </button>
             <button
               type="button"
               className="w-full rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
