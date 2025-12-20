@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
 const SEX_OPTIONS = ["Male", "Female", "Non-binary"] as const;
-const DIRECTION_OPTIONS = ["Arrival", "Departure"] as const;
+const DIRECTION_OPTIONS = ["Arriving to Pittsburgh", "Departing Pittsburgh"] as const;
 const PARTNER_OPTIONS = ["Any", "Male only", "Female only", "Non-binary only"] as const;
 
 type TripFormState = {
@@ -17,6 +17,9 @@ type TripFormState = {
   graduationYear: string;
   major: string;
   allowedPartnerSex: string;
+  willingToWaitUntil: string;
+  minHoursBefore: string;
+  maxHoursBefore: string;
 };
 
 type TripRecord = {
@@ -30,6 +33,11 @@ type TripRecord = {
   graduation_year: string | null;
   major: string | null;
   allowed_partner_sex: string;
+  willing_to_wait_until_time: string | null;
+  min_hours_before: number | null;
+  max_hours_before: number | null;
+  window_start: string | null;
+  window_end: string | null;
   created_at: string;
 };
 
@@ -41,7 +49,33 @@ const initialFormState: TripFormState = {
   flightTime: "",
   graduationYear: "",
   major: "",
-  allowedPartnerSex: ""
+  allowedPartnerSex: "",
+  willingToWaitUntil: "",
+  minHoursBefore: "",
+  maxHoursBefore: ""
+};
+
+const parseHours = (value: string) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+};
+
+const normalizeTime = (value: string | null) => {
+  if (!value) {
+    return "";
+  }
+
+  return value.length >= 5 ? value.slice(0, 5) : value;
+};
+
+const toDateTime = (dateValue: string, timeValue: string) => {
+  return new Date(`${dateValue}T${timeValue}`);
+};
+
+const addHours = (dateValue: Date, hours: number) => {
+  const next = new Date(dateValue);
+  next.setHours(next.getHours() + hours);
+  return next;
 };
 
 export default function DashboardPage() {
@@ -55,6 +89,21 @@ export default function DashboardPage() {
   const [trips, setTrips] = useState<TripRecord[]>([]);
   const [loadingTrips, setLoadingTrips] = useState(false);
   const [editingTripId, setEditingTripId] = useState<string | null>(null);
+
+  const isArrival = form.direction === "Arriving to Pittsburgh";
+  const isDeparture = form.direction === "Departing Pittsburgh";
+  const allowedPartnerOptions = (() => {
+    if (form.sex === "Male") {
+      return ["Any", "Male only"];
+    }
+    if (form.sex === "Female") {
+      return ["Any", "Female only"];
+    }
+    if (form.sex === "Non-binary") {
+      return ["Any", "Non-binary only"];
+    }
+    return ["Any"];
+  })();
 
   useEffect(() => {
     const loadUser = async () => {
@@ -73,6 +122,12 @@ export default function DashboardPage() {
     loadUser();
   }, [router]);
 
+  useEffect(() => {
+    if (!allowedPartnerOptions.includes(form.allowedPartnerSex)) {
+      setForm((prev) => ({ ...prev, allowedPartnerSex: "Any" }));
+    }
+  }, [allowedPartnerOptions, form.allowedPartnerSex]);
+
   const fetchTrips = async (userEmail: string) => {
     if (!userEmail) {
       return;
@@ -82,7 +137,7 @@ export default function DashboardPage() {
     const { data, error: fetchError } = await supabase
       .from("trips")
       .select(
-        "id,user_email,name,sex,direction,flight_date,flight_time,graduation_year,major,allowed_partner_sex,created_at"
+        "id,user_email,name,sex,direction,flight_date,flight_time,graduation_year,major,allowed_partner_sex,willing_to_wait_until_time,min_hours_before,max_hours_before,window_start,window_end,created_at"
       )
       .eq("user_email", userEmail)
       .order("created_at", { ascending: false });
@@ -101,6 +156,71 @@ export default function DashboardPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const validateAndComputeWindow = () => {
+    const flightDate = form.flightDate;
+    const flightTime = form.flightTime;
+    const direction = form.direction;
+
+    if (!flightDate || !flightTime || !direction) {
+      return { error: "Please complete the required trip details." };
+    }
+
+    const flightDateTime = toDateTime(flightDate, flightTime);
+
+    if (Number.isNaN(flightDateTime.getTime())) {
+      return { error: "Please enter a valid flight date and time." };
+    }
+
+    if (direction === "Arriving to Pittsburgh") {
+      if (!form.willingToWaitUntil) {
+        return { error: "Please enter how long you're willing to wait." };
+      }
+
+      const waitUntil = toDateTime(flightDate, form.willingToWaitUntil);
+      if (Number.isNaN(waitUntil.getTime())) {
+        return { error: "Please enter a valid wait-until time." };
+      }
+
+      if (waitUntil < flightDateTime) {
+        waitUntil.setDate(waitUntil.getDate() + 1);
+      }
+
+      return {
+        windowStart: flightDateTime,
+        windowEnd: waitUntil,
+        willingToWaitUntil: form.willingToWaitUntil,
+        minHoursBefore: null,
+        maxHoursBefore: null
+      };
+    }
+
+    const minHours = parseHours(form.minHoursBefore);
+    const maxHours = parseHours(form.maxHoursBefore);
+
+    if (!Number.isFinite(minHours) || !Number.isFinite(maxHours)) {
+      return { error: "Please enter valid hour ranges for departures." };
+    }
+
+    if (minHours < 0 || maxHours < 0) {
+      return { error: "Hours before flight must be positive." };
+    }
+
+    if (maxHours < minHours) {
+      return { error: "Maximum hours before flight must be greater than minimum hours." };
+    }
+
+    const windowStart = addHours(flightDateTime, -maxHours);
+    const windowEnd = addHours(flightDateTime, -minHours);
+
+    return {
+      windowStart,
+      windowEnd,
+      willingToWaitUntil: null,
+      minHoursBefore: minHours,
+      maxHoursBefore: maxHours
+    };
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
@@ -111,20 +231,34 @@ export default function DashboardPage() {
       return;
     }
 
+    const computed = validateAndComputeWindow();
+    if (computed.error) {
+      setError(computed.error);
+      return;
+    }
+
     setSaving(true);
+    const payload = {
+      user_email: email,
+      name: form.name,
+      sex: form.sex,
+      direction: form.direction,
+      flight_date: form.flightDate,
+      flight_time: form.flightTime,
+      graduation_year: form.graduationYear || null,
+      major: form.major || null,
+      allowed_partner_sex: form.allowedPartnerSex,
+      willing_to_wait_until_time: computed.willingToWaitUntil,
+      min_hours_before: computed.minHoursBefore,
+      max_hours_before: computed.maxHoursBefore,
+      window_start: computed.windowStart?.toISOString(),
+      window_end: computed.windowEnd?.toISOString()
+    };
+
     if (editingTripId) {
       const { error: updateError } = await supabase
         .from("trips")
-        .update({
-          name: form.name,
-          sex: form.sex,
-          direction: form.direction,
-          flight_date: form.flightDate,
-          flight_time: form.flightTime,
-          graduation_year: form.graduationYear || null,
-          major: form.major || null,
-          allowed_partner_sex: form.allowedPartnerSex
-        })
+        .update(payload)
         .eq("id", editingTripId)
         .eq("user_email", email);
 
@@ -137,17 +271,7 @@ export default function DashboardPage() {
       setSuccess("Trip updated.");
       setEditingTripId(null);
     } else {
-      const { error: insertError } = await supabase.from("trips").insert({
-        user_email: email,
-        name: form.name,
-        sex: form.sex,
-        direction: form.direction,
-        flight_date: form.flightDate,
-        flight_time: form.flightTime,
-        graduation_year: form.graduationYear || null,
-        major: form.major || null,
-        allowed_partner_sex: form.allowedPartnerSex
-      });
+      const { error: insertError } = await supabase.from("trips").insert(payload);
 
       if (insertError) {
         setError(insertError.message);
@@ -169,10 +293,13 @@ export default function DashboardPage() {
       sex: trip.sex,
       direction: trip.direction,
       flightDate: trip.flight_date,
-      flightTime: trip.flight_time,
+      flightTime: normalizeTime(trip.flight_time),
       graduationYear: trip.graduation_year ?? "",
       major: trip.major ?? "",
-      allowedPartnerSex: trip.allowed_partner_sex
+      allowedPartnerSex: trip.allowed_partner_sex,
+      willingToWaitUntil: normalizeTime(trip.willing_to_wait_until_time),
+      minHoursBefore: trip.min_hours_before?.toString() ?? "",
+      maxHoursBefore: trip.max_hours_before?.toString() ?? ""
     });
     setEditingTripId(trip.id);
     setSuccess("");
@@ -191,6 +318,9 @@ export default function DashboardPage() {
     await supabase.auth.signOut();
     router.replace("/");
   };
+
+  const dateLabel = isArrival ? "Arrival date" : "Departure date";
+  const timeLabel = isArrival ? "Flight arrival time" : "Flight departure time";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-white px-6 py-12">
@@ -260,54 +390,6 @@ export default function DashboardPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700" htmlFor="direction">
-                    Direction
-                  </label>
-                  <select
-                    id="direction"
-                    name="direction"
-                    value={form.direction}
-                    onChange={(event) => updateForm("direction", event.target.value)}
-                    className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900"
-                    required
-                  >
-                    <option value="">Select one</option>
-                    {DIRECTION_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700" htmlFor="flightDate">
-                    Flight date
-                  </label>
-                  <input
-                    id="flightDate"
-                    name="flightDate"
-                    type="date"
-                    value={form.flightDate}
-                    onChange={(event) => updateForm("flightDate", event.target.value)}
-                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700" htmlFor="flightTime">
-                    Flight time
-                  </label>
-                  <input
-                    id="flightTime"
-                    name="flightTime"
-                    type="time"
-                    value={form.flightTime}
-                    onChange={(event) => updateForm("flightTime", event.target.value)}
-                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-                    required
-                  />
-                </div>
-                <div>
                   <label
                     className="block text-sm font-medium text-slate-700"
                     htmlFor="graduationYear"
@@ -336,7 +418,118 @@ export default function DashboardPage() {
                     className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700" htmlFor="direction">
+                    Direction
+                  </label>
+                  <select
+                    id="direction"
+                    name="direction"
+                    value={form.direction}
+                    onChange={(event) => updateForm("direction", event.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900"
+                    required
+                  >
+                    <option value="">Select one</option>
+                    {DIRECTION_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700" htmlFor="flightDate">
+                    {dateLabel}
+                  </label>
+                  <input
+                    id="flightDate"
+                    name="flightDate"
+                    type="date"
+                    value={form.flightDate}
+                    onChange={(event) => updateForm("flightDate", event.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700" htmlFor="flightTime">
+                    {timeLabel}
+                  </label>
+                  <input
+                    id="flightTime"
+                    name="flightTime"
+                    type="time"
+                    value={form.flightTime}
+                    onChange={(event) => updateForm("flightTime", event.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
+                    required
+                  />
+                </div>
               </div>
+
+              {isArrival ? (
+                <div>
+                  <label
+                    className="block text-sm font-medium text-slate-700"
+                    htmlFor="willingToWaitUntil"
+                  >
+                    Willing to wait until
+                  </label>
+                  <input
+                    id="willingToWaitUntil"
+                    name="willingToWaitUntil"
+                    type="time"
+                    value={form.willingToWaitUntil}
+                    onChange={(event) => updateForm("willingToWaitUntil", event.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
+                    required
+                  />
+                </div>
+              ) : null}
+
+              {isDeparture ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label
+                      className="block text-sm font-medium text-slate-700"
+                      htmlFor="minHoursBefore"
+                    >
+                      Minimum hours before flight
+                    </label>
+                    <input
+                      id="minHoursBefore"
+                      name="minHoursBefore"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={form.minHoursBefore}
+                      onChange={(event) => updateForm("minHoursBefore", event.target.value)}
+                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="block text-sm font-medium text-slate-700"
+                      htmlFor="maxHoursBefore"
+                    >
+                      Maximum hours before flight
+                    </label>
+                    <input
+                      id="maxHoursBefore"
+                      name="maxHoursBefore"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={form.maxHoursBefore}
+                      onChange={(event) => updateForm("maxHoursBefore", event.target.value)}
+                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
+                      required
+                    />
+                  </div>
+                </div>
+              ) : null}
 
               <div>
                 <label
@@ -353,8 +546,7 @@ export default function DashboardPage() {
                   className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900"
                   required
                 >
-                  <option value="">Select one</option>
-                  {PARTNER_OPTIONS.map((option) => (
+                  {allowedPartnerOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -441,7 +633,7 @@ export default function DashboardPage() {
                             {trip.name} · {trip.direction}
                           </p>
                           <p className="text-xs text-slate-600">
-                            {trip.flight_date} at {trip.flight_time}
+                            {trip.flight_date} at {normalizeTime(trip.flight_time)}
                           </p>
                           <p className="text-xs text-slate-600">
                             Partner filter: {trip.allowed_partner_sex}
