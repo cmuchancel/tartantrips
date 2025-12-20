@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
@@ -68,14 +68,58 @@ const normalizeTime = (value: string | null) => {
   return value.length >= 5 ? value.slice(0, 5) : value;
 };
 
-const toDateTime = (dateValue: string, timeValue: string) => {
-  return new Date(`${dateValue}T${timeValue}`);
+const toDateTimeEST = (dateValue: string, timeValue: string) => {
+  const [year, month, day] = dateValue.split("-").map(Number);
+  const [hour, minute = 0] = timeValue.split(":").map(Number);
+
+  if (!year || !month || !day || Number.isNaN(hour) || Number.isNaN(minute)) {
+    return new Date("invalid");
+  }
+
+  const utcMillis = Date.UTC(year, month - 1, day, hour + 5, minute);
+  return new Date(utcMillis);
 };
 
 const addHours = (dateValue: Date, hours: number) => {
-  const next = new Date(dateValue);
-  next.setHours(next.getHours() + hours);
-  return next;
+  return new Date(dateValue.getTime() + hours * 60 * 60 * 1000);
+};
+
+const allowsSex = (allowed: string, partnerSex: string) => {
+  if (!allowed || allowed === "Any") {
+    return true;
+  }
+
+  if (allowed === "Male only") {
+    return partnerSex === "Male";
+  }
+
+  if (allowed === "Female only") {
+    return partnerSex === "Female";
+  }
+
+  if (allowed === "Non-binary only") {
+    return partnerSex === "Non-binary";
+  }
+
+  return false;
+};
+
+const windowsOverlap = (
+  aStart: string | null,
+  aEnd: string | null,
+  bStart: string | null,
+  bEnd: string | null
+) => {
+  if (!aStart || !aEnd || !bStart || !bEnd) {
+    return false;
+  }
+
+  const aStartDate = new Date(aStart);
+  const aEndDate = new Date(aEnd);
+  const bStartDate = new Date(bStart);
+  const bEndDate = new Date(bEnd);
+
+  return aStartDate <= bEndDate && aEndDate >= bStartDate;
 };
 
 export default function DashboardPage() {
@@ -89,6 +133,8 @@ export default function DashboardPage() {
   const [trips, setTrips] = useState<TripRecord[]>([]);
   const [loadingTrips, setLoadingTrips] = useState(false);
   const [editingTripId, setEditingTripId] = useState<string | null>(null);
+  const [matchesByTrip, setMatchesByTrip] = useState<Record<string, TripRecord[]>>({});
+  const [loadingMatches, setLoadingMatches] = useState(false);
 
   const isArrival = form.direction === "Arriving to Pittsburgh";
   const isDeparture = form.direction === "Departing Pittsburgh";
@@ -128,6 +174,57 @@ export default function DashboardPage() {
     }
   }, [allowedPartnerOptions, form.allowedPartnerSex]);
 
+  useEffect(() => {
+    const fetchMatchesForTrips = async () => {
+      if (!email || trips.length === 0) {
+        setMatchesByTrip({});
+        return;
+      }
+
+      setLoadingMatches(true);
+
+      const results = await Promise.all(
+        trips.map(async (trip) => {
+          const { data, error: matchError } = await supabase
+            .from("trips")
+            .select(
+              "id,user_email,name,sex,direction,flight_date,flight_time,allowed_partner_sex,window_start,window_end,created_at"
+            )
+            .eq("direction", trip.direction)
+            .eq("flight_date", trip.flight_date)
+            .neq("user_email", email);
+
+          if (matchError) {
+            return [trip.id, []] as const;
+          }
+
+          const filtered = (data ?? []).filter((candidate) => {
+            if (!windowsOverlap(trip.window_start, trip.window_end, candidate.window_start, candidate.window_end)) {
+              return false;
+            }
+
+            const currentAllowsCandidate = allowsSex(trip.allowed_partner_sex, candidate.sex);
+            const candidateAllowsCurrent = allowsSex(candidate.allowed_partner_sex, trip.sex);
+
+            return currentAllowsCandidate && candidateAllowsCurrent;
+          });
+
+          return [trip.id, filtered] as const;
+        })
+      );
+
+      const mapped: Record<string, TripRecord[]> = {};
+      results.forEach(([tripId, matches]) => {
+        mapped[tripId] = matches;
+      });
+
+      setMatchesByTrip(mapped);
+      setLoadingMatches(false);
+    };
+
+    fetchMatchesForTrips();
+  }, [email, trips]);
+
   const fetchTrips = async (userEmail: string) => {
     if (!userEmail) {
       return;
@@ -165,7 +262,7 @@ export default function DashboardPage() {
       return { error: "Please complete the required trip details." };
     }
 
-    const flightDateTime = toDateTime(flightDate, flightTime);
+    const flightDateTime = toDateTimeEST(flightDate, flightTime);
 
     if (Number.isNaN(flightDateTime.getTime())) {
       return { error: "Please enter a valid flight date and time." };
@@ -176,7 +273,7 @@ export default function DashboardPage() {
         return { error: "Please enter how long you're willing to wait." };
       }
 
-      const waitUntil = toDateTime(flightDate, form.willingToWaitUntil);
+      const waitUntil = toDateTimeEST(flightDate, form.willingToWaitUntil);
       if (Number.isNaN(waitUntil.getTime())) {
         return { error: "Please enter a valid wait-until time." };
       }
@@ -221,6 +318,20 @@ export default function DashboardPage() {
     };
   };
 
+  const hasDuplicateTrip = () => {
+    if (!form.direction || !form.flightDate) {
+      return false;
+    }
+
+    return trips.some((trip) => {
+      if (editingTripId && trip.id === editingTripId) {
+        return false;
+      }
+
+      return trip.direction === form.direction && trip.flight_date === form.flightDate;
+    });
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
@@ -228,6 +339,13 @@ export default function DashboardPage() {
 
     if (!email) {
       setError("We couldn't confirm your session. Please log in again.");
+      return;
+    }
+
+    if (hasDuplicateTrip()) {
+      setError(
+        "You already have a trip for this direction and date. Please edit the existing trip instead."
+      );
       return;
     }
 
@@ -317,6 +435,29 @@ export default function DashboardPage() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.replace("/");
+  };
+
+  const handleDeleteTrip = async (tripId: string) => {
+    if (!email) {
+      return;
+    }
+
+    const { error: deleteError } = await supabase
+      .from("trips")
+      .delete()
+      .eq("id", tripId)
+      .eq("user_email", email);
+
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+
+    if (editingTripId === tripId) {
+      cancelEdit();
+    }
+
+    fetchTrips(email);
   };
 
   const dateLabel = isArrival ? "Arrival date" : "Departure date";
@@ -621,34 +762,75 @@ export default function DashboardPage() {
                   No trips yet. Submit the form above to add your first trip.
                 </p>
               ) : (
-                <div className="mt-4 space-y-3">
-                  {trips.map((trip) => (
-                    <div
-                      key={trip.id}
-                      className="rounded-lg border border-slate-200 bg-slate-50 p-4"
-                    >
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex flex-col gap-1">
-                          <p className="text-sm font-semibold text-slate-900">
-                            {trip.name} · {trip.direction}
-                          </p>
-                          <p className="text-xs text-slate-600">
-                            {trip.flight_date} at {normalizeTime(trip.flight_time)}
-                          </p>
-                          <p className="text-xs text-slate-600">
-                            Partner filter: {trip.allowed_partner_sex}
-                          </p>
+                <div className="mt-4 space-y-4">
+                  {trips.map((trip) => {
+                    const tripMatches = matchesByTrip[trip.id] ?? [];
+
+                    return (
+                      <div
+                        key={trip.id}
+                        className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-col gap-1">
+                            <p className="text-sm font-semibold text-slate-900">
+                              {trip.name} · {trip.direction}
+                            </p>
+                            <p className="text-xs text-slate-600">
+                              {trip.flight_date} at {normalizeTime(trip.flight_time)}
+                            </p>
+                            <p className="text-xs text-slate-600">
+                              Partner filter: {trip.allowed_partner_sex}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                              onClick={() => startEdit(trip)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                              onClick={() => handleDeleteTrip(trip.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                          onClick={() => startEdit(trip)}
-                        >
-                          Edit
-                        </button>
+
+                        <div className="mt-4 border-t border-slate-200 pt-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Potential matches
+                          </p>
+                          {loadingMatches ? (
+                            <p className="mt-2 text-sm text-slate-600">Loading matches...</p>
+                          ) : tripMatches.length === 0 ? (
+                            <p className="mt-2 text-sm text-slate-600">No matches yet.</p>
+                          ) : (
+                            <div className="mt-3 space-y-2">
+                              {tripMatches.map((match) => (
+                                <div
+                                  key={match.id}
+                                  className="rounded-md border border-slate-200 bg-white p-3"
+                                >
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {match.name}
+                                  </p>
+                                  <p className="text-xs text-slate-600">
+                                    {match.direction} · {match.flight_date} at {normalizeTime(match.flight_time)}
+                                  </p>
+                                  <p className="text-xs text-slate-600">Sex: {match.sex}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>
