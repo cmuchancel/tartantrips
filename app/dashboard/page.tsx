@@ -41,6 +41,22 @@ type TripRecord = {
   created_at: string;
 };
 
+type MatchRecord = {
+  id: string;
+  user_email: string;
+  name: string;
+  sex: string;
+  graduation_year: string | null;
+  major: string | null;
+  direction: string;
+  flight_date: string;
+  flight_time: string;
+  allowed_partner_sex: string;
+  window_start: string | null;
+  window_end: string | null;
+  created_at: string;
+};
+
 const initialFormState: TripFormState = {
   name: "",
   sex: "",
@@ -174,7 +190,7 @@ export default function DashboardPage() {
   const [trips, setTrips] = useState<TripRecord[]>([]);
   const [loadingTrips, setLoadingTrips] = useState(false);
   const [editingTripId, setEditingTripId] = useState<string | null>(null);
-  const [matchesByTrip, setMatchesByTrip] = useState<Record<string, TripRecord[]>>({});
+  const [matchesByTrip, setMatchesByTrip] = useState<Record<string, MatchRecord[]>>({});
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
 
@@ -240,7 +256,7 @@ export default function DashboardPage() {
             return [trip.id, []] as const;
           }
 
-          const filtered = (data ?? []).filter((candidate) => {
+          const filtered = [...(data ?? [])].filter((candidate) => {
             if (!windowsOverlap(trip.window_start, trip.window_end, candidate.window_start, candidate.window_end)) {
               return false;
             }
@@ -259,9 +275,9 @@ export default function DashboardPage() {
         })
       );
 
-      const mapped: Record<string, TripRecord[]> = {};
+      const mapped: Record<string, MatchRecord[]> = {};
       results.forEach(([tripId, matches]) => {
-        mapped[tripId] = matches;
+        mapped[tripId] = [...matches];
       });
 
       setMatchesByTrip(mapped);
@@ -291,7 +307,7 @@ export default function DashboardPage() {
       return;
     }
 
-    setTrips(data ?? []);
+    setTrips([...(data ?? [])]);
     setLoadingTrips(false);
   };
 
@@ -531,7 +547,7 @@ export default function DashboardPage() {
   const buildEmailSubject = (tripDate: string) => {
     return `Airport ride share – CMU trip on ${tripDate}`;
   };
-  const buildEmailBody = (match: TripRecord, trip: TripRecord) => {
+  const buildEmailBody = (match: MatchRecord, trip: TripRecord) => {
     const tripTime = formatTime12h(normalizeTime(trip.flight_time));
     const formattedDate = formatDateLong(trip.flight_date);
     const directionPhrase =
