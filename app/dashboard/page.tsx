@@ -419,6 +419,18 @@ export default function DashboardPage() {
       window_end: computed.windowEnd?.toISOString()
     };
 
+    const notifyMatches = async (tripId: string) => {
+      try {
+        await fetch("/api/match-notifications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tripId })
+        });
+      } catch (notifyError) {
+        setError("Saved trip, but failed to trigger notifications.");
+      }
+    };
+
     if (editingTripId) {
       const { error: updateError } = await supabase
         .from("trips")
@@ -433,9 +445,14 @@ export default function DashboardPage() {
       }
 
       setSuccess("Trip updated.");
+      notifyMatches(editingTripId);
       setEditingTripId(null);
     } else {
-      const { error: insertError } = await supabase.from("trips").insert(payload);
+      const { data: insertedTrip, error: insertError } = await supabase
+        .from("trips")
+        .insert(payload)
+        .select("id")
+        .single();
 
       if (insertError) {
         setError(insertError.message);
@@ -444,6 +461,9 @@ export default function DashboardPage() {
       }
 
       setSuccess("Trip saved. We'll use these details for matching later.");
+      if (insertedTrip?.id) {
+        notifyMatches(insertedTrip.id);
+      }
     }
 
     setForm(initialFormState);
