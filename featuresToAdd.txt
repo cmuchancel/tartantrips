@@ -1,0 +1,3 @@
+- Add smth per trip where you can put airline and desination/origin so that you would be able to match people and inform them that they are on the same flight as others:
+- add smth that would use the airline to give the user a hyperlink to track wehther their match has landed: https://flypittsburgh.com/pittsburgh-international-airport/flights/airlines/
+- 

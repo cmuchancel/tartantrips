@@ -12,7 +12,7 @@ export default function Home() {
       const { data } = await supabase.auth.getUser();
 
       if (data?.user) {
-        router.replace("/dashboard");
+        router.replace("/home");
         return;
       }
 

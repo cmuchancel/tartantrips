@@ -48,13 +48,14 @@ const windowsOverlap = (aStart, aEnd, bStart, bEnd) => {
   return aStartDate <= bEndDate && aEndDate >= bStartDate;
 };
 
-const sendNotification = async (trip, matchedTrip) => {
+const sendNotification = async (trip, tripProfile) => {
   if (!resend) {
     return { error: "Missing Resend configuration" };
   }
 
   const subject = "✈️ New TartanTrips match available";
-  const body = `Hi ${trip.name},\n\nA new CMU student with a compatible trip just matched with you on TartanTrips.\n\nLog in to view your updated matches and coordinate if this one works for you.\n\n— TartanTrips\n`;
+  const recipientName = tripProfile?.name || "there";
+  const body = `Hi ${recipientName},\n\nA new CMU student with a compatible trip just matched with you on TartanTrips.\n\nLog in to view your updated matches and coordinate if this one works for you.\n\n— TartanTrips\n`;
 
   const { error } = await resend.emails.send({
     from: resendFrom,
@@ -99,7 +100,7 @@ export async function POST(request) {
   const { data: trip, error: tripError } = await supabaseAdmin
     .from("trips")
     .select(
-      "id,user_email,name,sex,direction,flight_date,flight_time,allowed_partner_sex,window_start,window_end,created_at,baseline_match_check_at"
+      "id,user_email,direction,flight_date,flight_time,allowed_partner_sex,window_start,window_end,created_at,baseline_match_check_at"
     )
     .eq("id", tripId)
     .single();
@@ -125,7 +126,7 @@ export async function POST(request) {
   const { data: candidates, error: candidatesError } = await supabaseAdmin
     .from("trips")
     .select(
-      "id,user_email,name,sex,direction,flight_date,flight_time,allowed_partner_sex,window_start,window_end,created_at,baseline_match_check_at"
+      "id,user_email,direction,flight_date,flight_time,allowed_partner_sex,window_start,window_end,created_at,baseline_match_check_at"
     )
     .eq("direction", trip.direction)
     .eq("flight_date", trip.flight_date)
@@ -136,13 +137,34 @@ export async function POST(request) {
     return NextResponse.json({ error: candidatesError.message }, { status: 500 });
   }
 
+  const emailsToFetch = [trip.user_email, ...(candidates ?? []).map((candidate) => candidate.user_email)];
+  const { data: profileRows } = await supabaseAdmin
+    .from("profiles")
+    .select("email,name,sex")
+    .in("email", emailsToFetch);
+
+  const profileMap = new Map();
+  (profileRows ?? []).forEach((record) => {
+    profileMap.set(record.email, record);
+  });
+
+  const tripProfile = profileMap.get(trip.user_email);
+  if (!tripProfile?.sex) {
+    return NextResponse.json({ error: "Trip owner profile is missing sex." }, { status: 400 });
+  }
+
   const compatible = (candidates ?? []).filter((candidate) => {
     if (!windowsOverlap(trip.window_start, trip.window_end, candidate.window_start, candidate.window_end)) {
       return false;
     }
 
-    const currentAllowsCandidate = allowsSex(trip.allowed_partner_sex, candidate.sex);
-    const candidateAllowsCurrent = allowsSex(candidate.allowed_partner_sex, trip.sex);
+    const candidateProfile = profileMap.get(candidate.user_email);
+    if (!candidateProfile?.sex) {
+      return false;
+    }
+
+    const currentAllowsCandidate = allowsSex(trip.allowed_partner_sex, candidateProfile.sex);
+    const candidateAllowsCurrent = allowsSex(candidate.allowed_partner_sex, tripProfile.sex);
 
     return currentAllowsCandidate && candidateAllowsCurrent;
   });
@@ -155,7 +177,7 @@ export async function POST(request) {
     if (candidateCreatedAfterBaseline) {
       const { error: existsError, exists } = await notificationExists(trip.id, candidate.id);
       if (!existsError && !exists) {
-        const { error: sendError } = await sendNotification(trip, candidate);
+        const { error: sendError } = await sendNotification(trip, tripProfile);
         if (!sendError) {
           await supabaseAdmin.from("match_notifications").insert({
             trip_id: trip.id,
@@ -171,7 +193,8 @@ export async function POST(request) {
     if (!isNewTrip && otherBaseline && trip.created_at > otherBaseline) {
       const { error: existsError, exists } = await notificationExists(candidate.id, trip.id);
       if (!existsError && !exists) {
-        const { error: sendError } = await sendNotification(candidate, trip);
+        const candidateProfile = profileMap.get(candidate.user_email);
+        const { error: sendError } = await sendNotification(candidate, candidateProfile);
         if (!sendError) {
           await supabaseAdmin.from("match_notifications").insert({
             trip_id: candidate.id,
@@ -185,7 +208,8 @@ export async function POST(request) {
     if (isNewTrip && otherBaseline && trip.created_at > otherBaseline) {
       const { error: existsError, exists } = await notificationExists(candidate.id, trip.id);
       if (!existsError && !exists) {
-        const { error: sendError } = await sendNotification(candidate, trip);
+        const candidateProfile = profileMap.get(candidate.user_email);
+        const { error: sendError } = await sendNotification(candidate, candidateProfile);
         if (!sendError) {
           await supabaseAdmin.from("match_notifications").insert({
             trip_id: candidate.id,

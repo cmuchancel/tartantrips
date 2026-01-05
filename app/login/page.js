@@ -15,6 +15,21 @@ export default function LoginPage() {
 
   useEffect(() => {
     const acceptMagicLink = async () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const code = searchParams.get("code");
+
+      if (code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+        if (exchangeError) {
+          setError(exchangeError.message);
+          return;
+        }
+
+        router.replace("/home");
+        return;
+      }
+
       const hash = window.location.hash.replace(/^#/, "");
       const params = new URLSearchParams(hash);
       const accessToken = params.get("access_token");
@@ -34,7 +49,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.replace("/dashboard");
+      router.replace("/home");
     };
 
     acceptMagicLink();

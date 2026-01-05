@@ -52,7 +52,7 @@ function AuthCallbackContent() {
         }
       }
 
-      router.replace("/dashboard");
+      router.replace("/home");
     };
 
     exchangeCode();
