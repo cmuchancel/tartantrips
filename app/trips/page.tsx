@@ -45,6 +45,7 @@ type MatchRecord = {
   allowed_partner_sex: string;
   window_start: string | null;
   window_end: string | null;
+  willing_to_wait_until_time: string | null;
   created_at: string;
   trip_status: string | null;
   match_email_0: string | null;
@@ -182,16 +183,19 @@ const TRIP_STATUS_OPTIONS = [
   "Matched and satisfied"
 ] as const;
 
-const LANDED_STATUS_OPTIONS = [
-  "Not landed yet",
-  "Scheduled to land (not confirmed)",
-  "Confirmed landed"
-] as const;
-
-const MEETUP_STATUS_OPTIONS = [
-  "Looking for match",
-  "Met up with match",
-  "Departed in rideshare"
+const TRIP_STATUS_STEPS = [
+  {
+    value: "Unmatched (looking for matches)",
+    label: "Unmatched"
+  },
+  {
+    value: "Matched and still looking",
+    label: "Matched · Looking"
+  },
+  {
+    value: "Matched and satisfied",
+    label: "Matched · Done"
+  }
 ] as const;
 
 const MATCHED_TRIP_STATUS_OPTIONS = [
@@ -284,7 +288,7 @@ export default function TripsPage() {
           const { data, error: matchError } = await supabase
             .from("trips")
             .select(
-              "id,user_email,direction,flight_date,flight_time,allowed_partner_sex,trip_status,match_email_0,match_email_1,match_email_2,match_email_3,match_email_4,match_email_5,match_status_0,match_status_1,match_status_2,match_status_3,match_status_4,match_status_5,window_start,window_end,created_at"
+              "id,user_email,direction,flight_date,flight_time,allowed_partner_sex,trip_status,match_email_0,match_email_1,match_email_2,match_email_3,match_email_4,match_email_5,match_status_0,match_status_1,match_status_2,match_status_3,match_status_4,match_status_5,window_start,window_end,willing_to_wait_until_time,created_at"
             )
             .eq("direction", trip.direction)
             .eq("flight_date", trip.flight_date)
@@ -796,14 +800,21 @@ export default function TripsPage() {
             return aDiff - bDiff;
           });
           const tripOwnerName = profile?.name ? `${profile.name}` : "Your trip";
-          const isArrivalTrip = trip.direction === "Arriving to Pittsburgh";
           const hasConfirmedMatch = [0, 1, 2, 3, 4, 5].some((slot) => {
             const key = `match_status_${slot}` as keyof TripRecord;
             return trip[key] === "matched";
           });
-          const isMatchedTripStatus = MATCHED_TRIP_STATUS_OPTIONS.includes(
-            trip.trip_status ?? ""
+          const completeCutoffTime = normalizeTime(
+            trip.willing_to_wait_until_time || trip.flight_time
           );
+          const tripComplete =
+            !Number.isNaN(toDateTimeEST(trip.flight_date, completeCutoffTime).getTime()) &&
+            toDateTimeEST(trip.flight_date, completeCutoffTime) < new Date();
+          const derivedTripStatus = hasConfirmedMatch
+            ? trip.trip_status === "Matched and satisfied"
+              ? "Matched and satisfied"
+              : "Matched and still looking"
+            : "Unmatched (looking for matches)";
           const confirmedMatches = tripMatches.filter(
             (match) => getMatchStatus(trip, match.user_email) === "matched"
           );
@@ -812,7 +823,7 @@ export default function TripsPage() {
           );
           const matchGroups = buildMatchGroups(potentialMatches);
 
-          const renderMatchCard = (match: MatchRecord) => (
+          const renderMatchCard = (match: MatchRecord, isReadOnly = false) => (
             <div key={match.id} className="rounded-md border border-slate-200 bg-white p-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex gap-3">
@@ -846,110 +857,118 @@ export default function TripsPage() {
                     <p className="text-xs text-slate-600">
                       Phone: {match.profile?.phone || "Not provided"}
                     </p>
+                    <p className="text-xs text-slate-600">
+                      Willing to wait until:{" "}
+                      {match.willing_to_wait_until_time
+                        ? formatTime12h(normalizeTime(match.willing_to_wait_until_time))
+                        : "Not provided"}
+                    </p>
                   </div>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <button
-                    type="button"
-                    className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                    onClick={() =>
-                      setExpandedMatchId(expandedMatchId === match.id ? null : match.id)
-                    }
-                  >
-                    Send an email
-                  </button>
-                  {(() => {
-                    const status = getMatchStatus(trip, match.user_email);
+                {isReadOnly ? null : (
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                      onClick={() =>
+                        setExpandedMatchId(expandedMatchId === match.id ? null : match.id)
+                      }
+                    >
+                      Send an email
+                    </button>
+                    {(() => {
+                      const status = getMatchStatus(trip, match.user_email);
 
-                    if (!status) {
-                      return (
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                          onClick={() =>
-                            setConfirmingMatch({
-                              tripId: trip.id,
-                              matchId: match.id,
-                              matchName: match.profile?.name || "this match"
-                            })
-                          }
-                        >
-                          Confirm match
-                        </button>
-                      );
-                    }
-
-                    if (status === "request_sent") {
-                      return (
-                        <>
-                          <span className="rounded-md bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
-                            Match request sent
-                          </span>
+                      if (!status) {
+                        return (
                           <button
                             type="button"
                             className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
                             onClick={() =>
-                              updateMatchRequestStatus(trip.id, match.id, "withdraw")
-                            }
-                          >
-                            Withdraw match
-                          </button>
-                        </>
-                      );
-                    }
-
-                    if (status === "request_received") {
-                      return (
-                        <>
-                          <span className="rounded-md bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
-                            Match request received
-                          </span>
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                            onClick={() => updateMatchRequestStatus(trip.id, match.id, "accept")}
-                          >
-                            Accept match
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                            onClick={() => updateMatchRequestStatus(trip.id, match.id, "deny")}
-                          >
-                            Deny match
-                          </button>
-                        </>
-                      );
-                    }
-
-                    if (status === "matched") {
-                      return (
-                        <>
-                          <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
-                            Confirmed match!
-                          </span>
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                            onClick={() =>
-                              setRemovingMatch({
+                              setConfirmingMatch({
                                 tripId: trip.id,
                                 matchId: match.id,
                                 matchName: match.profile?.name || "this match"
                               })
                             }
                           >
-                            Remove match
+                            Confirm match
                           </button>
-                        </>
-                      );
-                    }
+                        );
+                      }
 
-                    return null;
-                  })()}
-                </div>
+                      if (status === "request_sent") {
+                        return (
+                          <>
+                            <span className="rounded-md bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                              Match request sent
+                            </span>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                              onClick={() =>
+                                updateMatchRequestStatus(trip.id, match.id, "withdraw")
+                              }
+                            >
+                              Withdraw match
+                            </button>
+                          </>
+                        );
+                      }
+
+                      if (status === "request_received") {
+                        return (
+                          <>
+                            <span className="rounded-md bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                              Match request received
+                            </span>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                              onClick={() => updateMatchRequestStatus(trip.id, match.id, "accept")}
+                            >
+                              Accept match
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                              onClick={() => updateMatchRequestStatus(trip.id, match.id, "deny")}
+                            >
+                              Deny match
+                            </button>
+                          </>
+                        );
+                      }
+
+                      if (status === "matched") {
+                        return (
+                          <>
+                            <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
+                              Confirmed match!
+                            </span>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                              onClick={() =>
+                                setRemovingMatch({
+                                  tripId: trip.id,
+                                  matchId: match.id,
+                                  matchName: match.profile?.name || "this match"
+                                })
+                              }
+                            >
+                              Remove match
+                            </button>
+                          </>
+                        );
+                      }
+
+                      return null;
+                    })()}
+                  </div>
+                )}
               </div>
-              {expandedMatchId === match.id ? (
+              {!isReadOnly && expandedMatchId === match.id ? (
                 <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
                   <div className="flex flex-col gap-2">
                     <div>
@@ -1026,21 +1045,83 @@ export default function TripsPage() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Link
-                    className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                    href={`/plan?tripId=${trip.id}`}
-                  >
-                    Edit
-                  </Link>
+                  {tripComplete ? null : (
+                    <Link
+                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                      href={`/plan?tripId=${trip.id}`}
+                    >
+                      Edit
+                    </Link>
+                  )}
                   <button
                     type="button"
-                    className="inline-flex items-center justify-center rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
-                    onClick={() => handleDeleteTrip(trip.id)}
+                    className={`inline-flex items-center justify-center rounded-md border px-3 py-1.5 text-xs font-medium ${
+                      tripComplete
+                        ? "border-slate-200 text-slate-400"
+                        : "border-red-200 text-red-600 hover:bg-red-50"
+                    }`}
+                    onClick={() => {
+                      if (tripComplete) {
+                        return;
+                      }
+                      handleDeleteTrip(trip.id);
+                    }}
+                    disabled={tripComplete}
                   >
                     Delete
                   </button>
                 </div>
               </div>
+
+              <div className="mt-4 border-t border-slate-200 pt-3">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Trip status
+                  </label>
+                  {tripComplete ? (
+                    <p className="mt-2 text-sm font-semibold text-slate-700">Trip complete</p>
+                  ) : (
+                    <>
+                      <div className="mt-2 w-full rounded-full border border-slate-200 bg-slate-100 p-1">
+                        <div className="grid grid-cols-3 gap-1">
+                          {TRIP_STATUS_STEPS.map((step) => {
+                            const isActive = derivedTripStatus === step.value;
+                            const isDisabled =
+                              updatingTripId === trip.id ||
+                              (!hasConfirmedMatch && step.value !== "Unmatched (looking for matches)") ||
+                              (hasConfirmedMatch && step.value === "Unmatched (looking for matches)");
+
+                            return (
+                              <button
+                                key={step.value}
+                                type="button"
+                                className={`rounded-full px-2 py-1.5 text-[11px] font-semibold transition ${
+                                  isActive
+                                    ? "bg-white text-slate-900 shadow-sm"
+                                    : "text-slate-500 hover:text-slate-700"
+                                } ${isDisabled ? "cursor-not-allowed opacity-60" : ""}`}
+                                onClick={() => {
+                                  if (isDisabled) {
+                                    return;
+                                  }
+                                  updateTripStatus(trip.id, { trip_status: step.value });
+                                }}
+                              >
+                                {step.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {hasConfirmedMatch ? (
+                        <p className="mt-2 text-xs text-slate-500">
+                          Your matched status syncs with your match. If you&apos;re not aligned, remove the
+                          match and find others instead.
+                        </p>
+                      ) : null}
+                    </>
+                  )}
+                </div>
 
               {confirmedMatches.length > 0 ? (
                 <div className="mt-4">
@@ -1058,200 +1139,122 @@ export default function TripsPage() {
                             You&apos;re confirmed with multiple travelers.
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                          onClick={() => leavePool(trip, confirmedMatches)}
-                        >
-                          Leave pool
-                        </button>
+                        {tripComplete ? null : (
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                            onClick={() => leavePool(trip, confirmedMatches)}
+                          >
+                            Leave pool
+                          </button>
+                        )}
                       </div>
                       <div className="mt-3 space-y-2">
-                        {confirmedMatches.map((match) => renderMatchCard(match))}
+                        {confirmedMatches.map((match) => renderMatchCard(match, tripComplete))}
                       </div>
                     </div>
                   ) : (
                     <div className="mt-3 space-y-2">
-                      {confirmedMatches.map((match) => renderMatchCard(match))}
+                      {confirmedMatches.map((match) => renderMatchCard(match, tripComplete))}
                     </div>
                   )}
                 </div>
-              ) : null}
-
-              <div className="mt-4 border-t border-slate-200 pt-3">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Trip status
-                    </label>
-                    <select
-                      className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900"
-                      value={trip.trip_status ?? TRIP_STATUS_OPTIONS[0]}
-                      onChange={(event) =>
-                        updateTripStatus(trip.id, { trip_status: event.target.value })
-                      }
-                      disabled={updatingTripId === trip.id}
-                    >
-                      {TRIP_STATUS_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                    {hasConfirmedMatch ? (
-                      <p className="mt-2 text-xs text-slate-500">
-                        Your matched status syncs with your match. If you&apos;re not aligned, remove the
-                        match and find others instead.
-                      </p>
-                    ) : null}
-                    {hasConfirmedMatch && !isMatchedTripStatus ? (
-                      <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                        <button
-                          type="button"
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 hover:bg-slate-50"
-                          onClick={() =>
-                            updateTripStatus(trip.id, { trip_status: "Matched and still looking" })
-                          }
-                        >
-                          Matched, still looking
-                        </button>
-                        <button
-                          type="button"
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 hover:bg-slate-50"
-                          onClick={() =>
-                            updateTripStatus(trip.id, { trip_status: "Matched and satisfied" })
-                          }
-                        >
-                          Matched, not looking
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                  {isArrivalTrip ? (
-                    <div>
-                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Landed status
-                      </label>
-                      <select
-                        className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900"
-                        value={trip.landed_status ?? LANDED_STATUS_OPTIONS[0]}
-                        onChange={(event) =>
-                          updateTripStatus(trip.id, { landed_status: event.target.value })
-                        }
-                        disabled={updatingTripId === trip.id}
-                      >
-                        {LANDED_STATUS_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : null}
-                  {isArrivalTrip ? (
-                    <div className="sm:col-span-2">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Meet up status
-                      </label>
-                      <select
-                        className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900"
-                        value={trip.meetup_status ?? MEETUP_STATUS_OPTIONS[0]}
-                        onChange={(event) =>
-                          updateTripStatus(trip.id, { meetup_status: event.target.value })
-                        }
-                        disabled={updatingTripId === trip.id}
-                      >
-                        {MEETUP_STATUS_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : null}
+              ) : tripComplete ? (
+                <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  There were no confirmed matches for this trip.
                 </div>
-
-                <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Potential matches
-                </p>
-                <p className="mt-2 text-xs text-slate-500">
-                  When another traveler adds a trip that overlaps your time window, we’ll email you
-                  a heads-up so you can connect quickly.
-                </p>
-                {loadingMatches ? (
-                  <p className="mt-2 text-sm text-slate-600">Loading matches...</p>
-                ) : potentialMatches.length === 0 ? (
-                  <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                    <p className="text-base font-semibold">Don&apos;t worry!</p>
-                    <p className="mt-1 text-sm text-emerald-900">
-                      We&apos;ll keep an eye out and email you as soon as someone&apos;s trip lines up with
-                      your window.
+              ) : null}
+                {derivedTripStatus === "Matched and satisfied" || tripComplete ? null : (
+                  <>
+                    <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Potential matches
                     </p>
-                  </div>
-                ) : (
-                  <div className="mt-3 space-y-3">
-                    {matchGroups.map((group) => {
-                      if (group.kind === "pair") {
-                        const [first, second] = group.members;
-                        const poolStatuses = [
-                          getMatchStatus(trip, first.user_email),
-                          getMatchStatus(trip, second.user_email)
-                        ];
-                        const poolMatched = poolStatuses.every((status) => status === "matched");
-                        const poolHasAnyStatus = poolStatuses.some(Boolean);
-                        const poolCanJoin = poolStatuses.every((status) => !status);
-                        const groupKey = `pool-${first.user_email}-${second.user_email}`;
+                    <p className="mt-2 text-xs text-slate-500">
+                      When another traveler adds a trip that overlaps your time window, we’ll email
+                      you a heads-up so you can connect quickly.
+                    </p>
+                    {loadingMatches ? (
+                      <p className="mt-2 text-sm text-slate-600">Loading matches...</p>
+                    ) : potentialMatches.length === 0 ? (
+                      <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                        <p className="text-base font-semibold">Don&apos;t worry!</p>
+                        <p className="mt-1 text-sm text-emerald-900">
+                          We&apos;ll keep an eye out and email you as soon as someone&apos;s trip lines up
+                          with your window.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-3">
+                        {matchGroups.map((group) => {
+                          if (group.kind === "pair") {
+                            const [first, second] = group.members;
+                            const poolStatuses = [
+                              getMatchStatus(trip, first.user_email),
+                              getMatchStatus(trip, second.user_email)
+                            ];
+                            const poolMatched = poolStatuses.every((status) => status === "matched");
+                            const poolHasAnyStatus = poolStatuses.some(Boolean);
+                            const poolCanJoin = poolStatuses.every((status) => !status);
+                            const groupKey = `pool-${first.user_email}-${second.user_email}`;
 
-                        return (
-                          <div
-                            key={groupKey}
-                            className="rounded-md border border-slate-200 bg-slate-50 p-3"
-                          >
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                              <div>
-                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                  Matched pool
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  These travelers already confirmed a match together.
-                                </p>
-                              </div>
-                              <div className="flex flex-col items-start gap-2 sm:items-end">
-                                {poolMatched ? (
-                                  <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
-                                    Pool confirmed
-                                  </span>
-                                ) : poolHasAnyStatus ? (
-                                  <span className="text-xs text-slate-500">
-                                    Pool confirmed once both accept.
-                                  </span>
-                                ) : poolCanJoin ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                                      onClick={() => handleJoinPool(trip, group.members)}
-                                    >
-                                      Join the pool
-                                    </button>
-                                    <span className="text-xs text-slate-500">
-                                      Pool confirmed once both accept.
-                                    </span>
-                                  </>
-                                ) : null}
-                              </div>
-                            </div>
+                            return (
+                              <div
+                                key={groupKey}
+                                className="rounded-md border border-slate-200 bg-slate-50 p-3"
+                              >
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                      Matched pool
+                                    </p>
+                                    <p className="text-xs text-slate-500">
+                                      These travelers already confirmed a match together.
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-col items-start gap-2 sm:items-end">
+                                    {poolMatched ? (
+                                      <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
+                                        Pool confirmed
+                                      </span>
+                                    ) : poolHasAnyStatus ? (
+                                      <span className="text-xs text-slate-500">
+                                        Pool confirmed once both accept.
+                                      </span>
+                                    ) : poolCanJoin ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                                          onClick={() => handleJoinPool(trip, group.members)}
+                                        >
+                                          Join the pool
+                                        </button>
+                                        <span className="text-xs text-slate-500">
+                                          Pool confirmed once both accept.
+                                        </span>
+                                      </>
+                                    ) : null}
+                                  </div>
+                                </div>
                             <div className="mt-3 space-y-2">
-                              {group.members.map((member) => renderMatchCard(member))}
+                              {group.members.map((member) =>
+                                renderMatchCard(member, tripComplete)
+                              )}
                             </div>
                           </div>
                         );
                       }
 
                       const [solo] = group.members;
-                      return <div key={solo.user_email}>{renderMatchCard(solo)}</div>;
+                      return (
+                        <div key={solo.user_email}>
+                          {renderMatchCard(solo, tripComplete)}
+                        </div>
+                      );
                     })}
-                  </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
