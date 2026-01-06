@@ -137,7 +137,10 @@ export async function POST(request) {
     return NextResponse.json({ error: candidatesError.message }, { status: 500 });
   }
 
-  const emailsToFetch = [trip.user_email, ...(candidates ?? []).map((candidate) => candidate.user_email)];
+  const emailsToFetch = [
+    trip.user_email,
+    ...(candidates ?? []).map((candidate) => candidate.user_email)
+  ];
   const { data: profileRows } = await supabaseAdmin
     .from("profiles")
     .select("email,name,sex")

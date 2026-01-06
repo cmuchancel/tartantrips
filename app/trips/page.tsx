@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import AppNav from "../components/AppNav";
 
@@ -46,6 +46,19 @@ type MatchRecord = {
   window_start: string | null;
   window_end: string | null;
   created_at: string;
+  trip_status: string | null;
+  match_email_0: string | null;
+  match_email_1: string | null;
+  match_email_2: string | null;
+  match_email_3: string | null;
+  match_email_4: string | null;
+  match_email_5: string | null;
+  match_status_0: string | null;
+  match_status_1: string | null;
+  match_status_2: string | null;
+  match_status_3: string | null;
+  match_status_4: string | null;
+  match_status_5: string | null;
   profile?: ProfileRecord | null;
 };
 
@@ -57,6 +70,11 @@ type ProfileRecord = {
   graduation_year: string | null;
   phone: string | null;
   avatar_path: string | null;
+};
+
+type MatchGroup = {
+  kind: "single" | "pair";
+  members: MatchRecord[];
 };
 
 const normalizeTime = (value: string | null) => {
@@ -183,6 +201,8 @@ const MATCHED_TRIP_STATUS_OPTIONS = [
 
 export default function TripsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const focusTripId = searchParams.get("tripId");
   const [email, setEmail] = useState("");
   const [profile, setProfile] = useState<ProfileRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -240,6 +260,17 @@ export default function TripsPage() {
   }, [router]);
 
   useEffect(() => {
+    if (!focusTripId || loading) {
+      return;
+    }
+
+    const element = document.getElementById(`trip-${focusTripId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [focusTripId, loading]);
+
+  useEffect(() => {
     const fetchMatchesForTrips = async () => {
       if (!email || trips.length === 0 || !profile?.sex) {
         setMatchesByTrip({});
@@ -253,7 +284,7 @@ export default function TripsPage() {
           const { data, error: matchError } = await supabase
             .from("trips")
             .select(
-              "id,user_email,direction,flight_date,flight_time,allowed_partner_sex,window_start,window_end,created_at"
+              "id,user_email,direction,flight_date,flight_time,allowed_partner_sex,trip_status,match_email_0,match_email_1,match_email_2,match_email_3,match_email_4,match_email_5,match_status_0,match_status_1,match_status_2,match_status_3,match_status_4,match_status_5,window_start,window_end,created_at"
             )
             .eq("direction", trip.direction)
             .eq("flight_date", trip.flight_date)
@@ -288,6 +319,10 @@ export default function TripsPage() {
 
           const filtered = candidates
             .filter((candidate) => {
+              if (candidate.trip_status === "Matched and satisfied") {
+                return false;
+              }
+
               if (!windowsOverlap(trip.window_start, trip.window_end, candidate.window_start, candidate.window_end)) {
                 return false;
               }
@@ -315,7 +350,37 @@ export default function TripsPage() {
               return aDiff - bDiff;
             });
 
-          return [trip.id, filtered] as const;
+          const paired = filtered.filter((candidate) => {
+            for (let i = 0; i < 6; i += 1) {
+              const emailKey = `match_email_${i}` as keyof MatchRecord;
+              const statusKey = `match_status_${i}` as keyof MatchRecord;
+              const matchedEmail = candidate[emailKey] as string | null;
+              const matchedStatus = candidate[statusKey] as string | null;
+              if (matchedStatus === "matched" && matchedEmail && !filtered.find((item) => item.user_email === matchedEmail)) {
+                return false;
+              }
+            }
+            return true;
+          });
+
+          const emailsInList = new Set(paired.map((candidate) => candidate.user_email));
+          const finalList = paired.filter((candidate) => {
+            for (let i = 0; i < 6; i += 1) {
+              const emailKey = `match_email_${i}` as keyof MatchRecord;
+              const statusKey = `match_status_${i}` as keyof MatchRecord;
+              const matchedEmail = candidate[emailKey] as string | null;
+              const matchedStatus = candidate[statusKey] as string | null;
+              if (matchedStatus === "matched" && matchedEmail && emailsInList.has(matchedEmail)) {
+                const pairedCandidate = paired.find((item) => item.user_email === matchedEmail);
+                if (!pairedCandidate || !hasConfirmedMatchWith(pairedCandidate, candidate.user_email)) {
+                  return false;
+                }
+              }
+            }
+            return true;
+          });
+
+          return [trip.id, finalList] as const;
         })
       );
 
@@ -348,6 +413,48 @@ export default function TripsPage() {
     }
     const statusKey = `match_status_${slot}` as keyof TripRecord;
     return trip[statusKey] as string | null;
+  };
+
+  const hasConfirmedMatchWith = (trip: MatchRecord, otherEmail: string) => {
+    for (let i = 0; i < 6; i += 1) {
+      const emailKey = `match_email_${i}` as keyof MatchRecord;
+      const statusKey = `match_status_${i}` as keyof MatchRecord;
+      if (trip[emailKey] === otherEmail && trip[statusKey] === "matched") {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const buildMatchGroups = (matches: MatchRecord[]): MatchGroup[] => {
+    const used = new Set<string>();
+    const groups: MatchGroup[] = [];
+
+    matches.forEach((candidate) => {
+      if (used.has(candidate.user_email)) {
+        return;
+      }
+
+      const partner = matches.find(
+        (other) =>
+          other.user_email !== candidate.user_email &&
+          !used.has(other.user_email) &&
+          hasConfirmedMatchWith(candidate, other.user_email) &&
+          hasConfirmedMatchWith(other, candidate.user_email)
+      );
+
+      if (partner) {
+        used.add(candidate.user_email);
+        used.add(partner.user_email);
+        groups.push({ kind: "pair", members: [candidate, partner] });
+        return;
+      }
+
+      used.add(candidate.user_email);
+      groups.push({ kind: "single", members: [candidate] });
+    });
+
+    return groups;
   };
 
   const fetchTrips = async (userEmail: string) => {
@@ -476,6 +583,37 @@ export default function TripsPage() {
     }
   };
 
+  const requestMatch = async (tripId: string, matchedTripId: string) => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token;
+
+    if (!accessToken) {
+      setError("We couldn't confirm your session. Please log in again.");
+      return false;
+    }
+
+    const response = await fetch("/api/match-requests", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({
+        action: "request",
+        tripId,
+        matchedTripId
+      })
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      setError(data?.error || "Unable to request match.");
+      return false;
+    }
+
+    return true;
+  };
+
   const handleConfirmMatch = async () => {
     if (!confirmingMatch || !email) {
       return;
@@ -495,30 +633,8 @@ export default function TripsPage() {
       setConfirmingMatch(null);
       return;
     }
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData?.session?.access_token;
-
-    if (!accessToken) {
-      setError("We couldn't confirm your session. Please log in again.");
-      return;
-    }
-
-    const response = await fetch("/api/match-requests", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`
-      },
-      body: JSON.stringify({
-        action: "request",
-        tripId,
-        matchedTripId: matchId
-      })
-    });
-
-    if (!response.ok) {
-      const data = await response.json();
-      setError(data?.error || "Unable to request match.");
+    const requested = await requestMatch(tripId, matchId);
+    if (!requested) {
       return;
     }
 
@@ -556,6 +672,31 @@ export default function TripsPage() {
       const data = await response.json();
       setError(data?.error || "Unable to update match status.");
       return;
+    }
+
+    fetchTrips(email);
+  };
+
+  const handleJoinPool = async (trip: TripRecord, poolMembers: MatchRecord[]) => {
+    if (!email) {
+      return;
+    }
+
+    const filledSlots = [0, 1, 2, 3, 4, 5].filter((slot) => {
+      const key = `match_email_${slot}` as keyof TripRecord;
+      return Boolean(trip[key]);
+    }).length;
+
+    if (filledSlots + poolMembers.length > 6) {
+      setError("Rideshare services only allow up to 6 riders. That’s the maximum.");
+      return;
+    }
+
+    for (const member of poolMembers) {
+      const success = await requestMatch(trip.id, member.id);
+      if (!success) {
+        return;
+      }
     }
 
     fetchTrips(email);
@@ -609,10 +750,207 @@ export default function TripsPage() {
           const isMatchedTripStatus = MATCHED_TRIP_STATUS_OPTIONS.includes(
             trip.trip_status ?? ""
           );
+          const matchGroups = buildMatchGroups(tripMatches);
+
+          const renderMatchCard = (match: MatchRecord) => (
+            <div key={match.id} className="rounded-md border border-slate-200 bg-white p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex gap-3">
+                  <div className="h-12 w-12 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+                    {match.profile?.avatar_path ? (
+                      <img
+                        src={
+                          supabase.storage
+                            .from("avatars")
+                            .getPublicUrl(match.profile.avatar_path).data.publicUrl
+                        }
+                        alt={match.profile?.name || "Profile"}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : null}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {match.profile?.name || "CMU student"}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      {match.direction} · {match.flight_date} at {normalizeTime(match.flight_time)}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      Sex: {match.profile?.sex || "Not provided"}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      Major: {match.profile?.major || "Not provided"} · Year:{" "}
+                      {match.profile?.graduation_year || "N/A"}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      Phone: {match.profile?.phone || "Not provided"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                    onClick={() =>
+                      setExpandedMatchId(expandedMatchId === match.id ? null : match.id)
+                    }
+                  >
+                    Send an email
+                  </button>
+                  {(() => {
+                    const status = getMatchStatus(trip, match.user_email);
+
+                    if (!status) {
+                      return (
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                          onClick={() =>
+                            setConfirmingMatch({
+                              tripId: trip.id,
+                              matchId: match.id,
+                              matchName: match.profile?.name || "this match"
+                            })
+                          }
+                        >
+                          Confirm match
+                        </button>
+                      );
+                    }
+
+                    if (status === "request_sent") {
+                      return (
+                        <>
+                          <span className="rounded-md bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                            Match request sent
+                          </span>
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                            onClick={() =>
+                              updateMatchRequestStatus(trip.id, match.id, "withdraw")
+                            }
+                          >
+                            Withdraw match
+                          </button>
+                        </>
+                      );
+                    }
+
+                    if (status === "request_received") {
+                      return (
+                        <>
+                          <span className="rounded-md bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                            Match request received
+                          </span>
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                            onClick={() => updateMatchRequestStatus(trip.id, match.id, "accept")}
+                          >
+                            Accept match
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                            onClick={() => updateMatchRequestStatus(trip.id, match.id, "deny")}
+                          >
+                            Deny match
+                          </button>
+                        </>
+                      );
+                    }
+
+                    if (status === "matched") {
+                      return (
+                        <>
+                          <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
+                            Confirmed match!
+                          </span>
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                            onClick={() =>
+                              setRemovingMatch({
+                                tripId: trip.id,
+                                matchId: match.id,
+                                matchName: match.profile?.name || "this match"
+                              })
+                            }
+                          >
+                            Remove match
+                          </button>
+                        </>
+                      );
+                    }
+
+                    return null;
+                  })()}
+                </div>
+              </div>
+              {expandedMatchId === match.id ? (
+                <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                  <div className="flex flex-col gap-2">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-600">Email</p>
+                      <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input
+                          type="text"
+                          value={match.user_email}
+                          readOnly
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                          onFocus={(event) => event.target.select()}
+                        />
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-900 hover:bg-white"
+                          onClick={() => handleCopy(match.user_email)}
+                        >
+                          Copy email
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-600">Message</p>
+                      <textarea
+                        readOnly
+                        rows={6}
+                        className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-xs text-slate-900"
+                        value={buildEmailBody(match, trip)}
+                      />
+                      <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-900 hover:bg-white"
+                          onClick={() => handleCopy(buildEmailBody(match, trip))}
+                        >
+                          Copy message
+                        </button>
+                        <a
+                          className="inline-flex items-center justify-center rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-900 hover:bg-white"
+                          href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
+                            match.user_email
+                          )}&su=${encodeURIComponent(buildEmailSubject(trip.flight_date))}&body=${encodeURIComponent(
+                            buildEmailBody(match, trip)
+                          )}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open in Gmail
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          );
 
           return (
             <div
               key={trip.id}
+              id={`trip-${trip.id}`}
               className="rounded-lg border border-slate-200 bg-slate-50 p-4"
             >
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -740,206 +1078,83 @@ export default function TripsPage() {
                 <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Potential matches
                 </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  When another traveler adds a trip that overlaps your time window, we’ll email you
+                  a heads-up so you can connect quickly.
+                </p>
                 {loadingMatches ? (
                   <p className="mt-2 text-sm text-slate-600">Loading matches...</p>
                 ) : tripMatches.length === 0 ? (
-                  <p className="mt-2 text-sm text-slate-600">No matches yet.</p>
+                  <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                    <p className="text-base font-semibold">Don&apos;t worry!</p>
+                    <p className="mt-1 text-sm text-emerald-900">
+                      We&apos;ll keep an eye out and email you as soon as someone&apos;s trip lines up with
+                      your window.
+                    </p>
+                  </div>
                 ) : (
-                  <div className="mt-3 space-y-2">
-                    {tripMatches.map((match) => (
-                      <div
-                        key={match.id}
-                        className="rounded-md border border-slate-200 bg-white p-3"
-                      >
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="flex gap-3">
-                            <div className="h-12 w-12 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
-                              {match.profile?.avatar_path ? (
-                                <img
-                                  src={
-                                    supabase.storage
-                                      .from("avatars")
-                                      .getPublicUrl(match.profile.avatar_path).data.publicUrl
-                                  }
-                                  alt={match.profile?.name || "Profile"}
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : null}
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-sm font-semibold text-slate-900">
-                                {match.profile?.name || "CMU student"}
-                              </p>
-                              <p className="text-xs text-slate-600">
-                                {match.direction} · {match.flight_date} at {normalizeTime(match.flight_time)}
-                              </p>
-                              <p className="text-xs text-slate-600">
-                                Sex: {match.profile?.sex || "Not provided"}
-                              </p>
-                              <p className="text-xs text-slate-600">
-                                Major: {match.profile?.major || "Not provided"} · Year: {match.profile?.graduation_year || "N/A"}
-                              </p>
-                              <p className="text-xs text-slate-600">
-                                Phone: {match.profile?.phone || "Not provided"}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                              onClick={() =>
-                                setExpandedMatchId(expandedMatchId === match.id ? null : match.id)
-                              }
-                            >
-                              Send an email
-                            </button>
-                            {(() => {
-                              const status = getMatchStatus(trip, match.user_email);
+                  <div className="mt-3 space-y-3">
+                    {matchGroups.map((group) => {
+                      if (group.kind === "pair") {
+                        const [first, second] = group.members;
+                        const poolStatuses = [
+                          getMatchStatus(trip, first.user_email),
+                          getMatchStatus(trip, second.user_email)
+                        ];
+                        const poolMatched = poolStatuses.every((status) => status === "matched");
+                        const poolHasAnyStatus = poolStatuses.some(Boolean);
+                        const poolCanJoin = poolStatuses.every((status) => !status);
+                        const groupKey = `pool-${first.user_email}-${second.user_email}`;
 
-                              if (!status) {
-                                return (
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                                    onClick={() =>
-                                      setConfirmingMatch({
-                                        tripId: trip.id,
-                                        matchId: match.id,
-                                        matchName: match.profile?.name || "this match"
-                                      })
-                                    }
-                                  >
-                                    Confirm match
-                                  </button>
-                                );
-                              }
-
-                              if (status === "request_sent") {
-                                return (
-                                  <>
-                                    <span className="rounded-md bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
-                                      Match request sent
-                                    </span>
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                                      onClick={() => updateMatchRequestStatus(trip.id, match.id, "withdraw")}
-                                    >
-                                      Withdraw match
-                                    </button>
-                                  </>
-                                );
-                              }
-
-                              if (status === "request_received") {
-                                return (
-                                  <>
-                                    <span className="rounded-md bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
-                                      Match request received
-                                    </span>
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                                      onClick={() => updateMatchRequestStatus(trip.id, match.id, "accept")}
-                                    >
-                                      Accept match
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                                      onClick={() => updateMatchRequestStatus(trip.id, match.id, "deny")}
-                                    >
-                                      Deny match
-                                    </button>
-                                  </>
-                                );
-                              }
-
-                              if (status === "matched") {
-                                return (
-                                  <>
-                                    <span className="rounded-md bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
-                                      Confirmed match!
-                                    </span>
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                                      onClick={() =>
-                                        setRemovingMatch({
-                                          tripId: trip.id,
-                                          matchId: match.id,
-                                          matchName: match.profile?.name || "this match"
-                                        })
-                                      }
-                                    >
-                                      Remove match
-                                    </button>
-                                  </>
-                                );
-                              }
-
-                              return null;
-                            })()}
-                          </div>
-                        </div>
-                        {expandedMatchId === match.id ? (
-                          <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                            <div className="flex flex-col gap-2">
+                        return (
+                          <div
+                            key={groupKey}
+                            className="rounded-md border border-slate-200 bg-slate-50 p-3"
+                          >
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                               <div>
-                                <p className="text-xs font-semibold text-slate-600">Email</p>
-                                <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
-                                  <input
-                                    type="text"
-                                    value={match.user_email}
-                                    readOnly
-                                    className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                                    onFocus={(event) => event.target.select()}
-                                  />
-                                  <button
-                                    type="button"
-                                    className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-900 hover:bg-white"
-                                    onClick={() => handleCopy(match.user_email)}
-                                  >
-                                    Copy email
-                                  </button>
-                                </div>
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  Matched pool
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  These travelers already confirmed a match together.
+                                </p>
                               </div>
-                              <div>
-                                <p className="text-xs font-semibold text-slate-600">Message</p>
-                                <textarea
-                                  readOnly
-                                  rows={6}
-                                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-xs text-slate-900"
-                                  value={buildEmailBody(match, trip)}
-                                />
-                                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                                  <button
-                                    type="button"
-                                    className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-900 hover:bg-white"
-                                    onClick={() => handleCopy(buildEmailBody(match, trip))}
-                                  >
-                                    Copy message
-                                  </button>
-                                  <a
-                                    className="inline-flex items-center justify-center rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-900 hover:bg-white"
-                                    href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
-                                      match.user_email
-                                    )}&su=${encodeURIComponent(
-                                      buildEmailSubject(trip.flight_date)
-                                    )}&body=${encodeURIComponent(buildEmailBody(match, trip))}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    Open in Gmail
-                                  </a>
-                                </div>
+                              <div className="flex flex-col items-start gap-2 sm:items-end">
+                                {poolMatched ? (
+                                  <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
+                                    Pool confirmed
+                                  </span>
+                                ) : poolHasAnyStatus ? (
+                                  <span className="text-xs text-slate-500">
+                                    Pool confirmed once both accept.
+                                  </span>
+                                ) : poolCanJoin ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                                      onClick={() => handleJoinPool(trip, group.members)}
+                                    >
+                                      Join the pool
+                                    </button>
+                                    <span className="text-xs text-slate-500">
+                                      Pool confirmed once both accept.
+                                    </span>
+                                  </>
+                                ) : null}
                               </div>
                             </div>
+                            <div className="mt-3 space-y-2">
+                              {group.members.map((member) => renderMatchCard(member))}
+                            </div>
                           </div>
-                        ) : null}
-                      </div>
-                    ))}
+                        );
+                      }
+
+                      const [solo] = group.members;
+                      return <div key={solo.user_email}>{renderMatchCard(solo)}</div>;
+                    })}
                   </div>
                 )}
               </div>
