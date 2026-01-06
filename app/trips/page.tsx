@@ -222,6 +222,10 @@ export default function TripsPage() {
     matchId: string;
     matchName: string;
   } | null>(null);
+  const [confirmingPool, setConfirmingPool] = useState<{
+    tripId: string;
+    members: MatchRecord[];
+  } | null>(null);
   const [removingMatch, setRemovingMatch] = useState<{
     tripId: string;
     matchId: string;
@@ -438,6 +442,17 @@ export default function TripsPage() {
     }
     const statusKey = `match_status_${slot}` as keyof TripRecord;
     return trip[statusKey] as string | null;
+  };
+
+  const getMatchStatusFromRecord = (match: MatchRecord, otherEmail: string) => {
+    for (let i = 0; i < 6; i += 1) {
+      const emailKey = `match_email_${i}` as keyof MatchRecord;
+      const statusKey = `match_status_${i}` as keyof MatchRecord;
+      if (match[emailKey] === otherEmail) {
+        return match[statusKey] as string | null;
+      }
+    }
+    return null;
   };
 
   const hasConfirmedMatchWith = (trip: MatchRecord, otherEmail: string) => {
@@ -892,7 +907,7 @@ export default function TripsPage() {
                               })
                             }
                           >
-                            Confirm match
+                            Request match
                           </button>
                         );
                       }
@@ -911,6 +926,50 @@ export default function TripsPage() {
                               }
                             >
                               Withdraw match
+                            </button>
+                          </>
+                        );
+                      }
+
+                      if (status === "partner_approval_needed") {
+                        const reciprocalStatus = getMatchStatusFromRecord(match, trip.user_email);
+                        if (reciprocalStatus === "partner_approval_needed") {
+                          return (
+                            <>
+                              <span className="rounded-md bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                                Waiting on partner approval
+                              </span>
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                                onClick={() =>
+                                  updateMatchRequestStatus(trip.id, match.id, "withdraw")
+                                }
+                              >
+                                Withdraw request
+                              </button>
+                            </>
+                          );
+                        }
+
+                        return (
+                          <>
+                            <span className="rounded-md bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                              Partner approval requested
+                            </span>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                              onClick={() => updateMatchRequestStatus(trip.id, match.id, "accept")}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                              onClick={() => updateMatchRequestStatus(trip.id, match.id, "deny")}
+                            >
+                              Deny
                             </button>
                           </>
                         );
@@ -1221,21 +1280,26 @@ export default function TripsPage() {
                                         Pool confirmed once both accept.
                                       </span>
                                     ) : poolCanJoin ? (
-                                      <>
-                                        <button
-                                          type="button"
-                                          className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
-                                          onClick={() => handleJoinPool(trip, group.members)}
-                                        >
-                                          Join the pool
-                                        </button>
-                                        <span className="text-xs text-slate-500">
-                                          Pool confirmed once both accept.
-                                        </span>
-                                      </>
-                                    ) : null}
-                                  </div>
-                                </div>
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                                      onClick={() =>
+                                        setConfirmingPool({
+                                          tripId: trip.id,
+                                          members: group.members
+                                        })
+                                      }
+                                    >
+                                      Join the pool
+                                    </button>
+                                    <span className="text-xs text-slate-500">
+                                      Pool confirmed once both accept.
+                                    </span>
+                                  </>
+                                ) : null}
+                              </div>
+                            </div>
                             <div className="mt-3 space-y-2">
                               {group.members.map((member) =>
                                 renderMatchCard(member, tripComplete)
@@ -1269,10 +1333,48 @@ export default function TripsPage() {
       {confirmingMatch ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-6">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
-            <h2 className="text-lg font-semibold text-slate-900">Confirm match</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Request match</h2>
+            {(() => {
+              const trip = trips.find((item) => item.id === confirmingMatch.tripId);
+              const confirmedPartnerEmails =
+                trip &&
+                [0, 1, 2, 3, 4, 5]
+                  .map((slot) => {
+                    const emailKey = `match_email_${slot}` as keyof TripRecord;
+                    const statusKey = `match_status_${slot}` as keyof TripRecord;
+                    return trip[statusKey] === "matched" ? (trip[emailKey] as string | null) : null;
+                  })
+                  .filter(Boolean);
+              const confirmedPartnerNames =
+                confirmedPartnerEmails && confirmedPartnerEmails.length > 0
+                  ? confirmedPartnerEmails
+                      .map((emailValue) => {
+                        const found = matchesByTrip[confirmingMatch.tripId]?.find(
+                          (candidate) => candidate.user_email === emailValue
+                        );
+                        return found?.profile?.name || emailValue;
+                      })
+                      .filter(Boolean)
+                  : [];
+
+              return (
+                <p className="mt-2 text-sm text-slate-600">
+                  A request will be sent to {confirmingMatch.matchName}. Your match is only
+                  confirmed once {confirmingMatch.matchName} accepts
+                  {confirmedPartnerNames.length > 0
+                    ? ` and your current match ${
+                        confirmedPartnerNames.length > 1
+                          ? `${confirmedPartnerNames.slice(0, -1).join(", ")} and ${
+                              confirmedPartnerNames[confirmedPartnerNames.length - 1]
+                            }`
+                          : confirmedPartnerNames[0]
+                      } approves.`
+                    : "."}
+                </p>
+              );
+            })()}
             <p className="mt-2 text-sm text-slate-600">
-              Confirm you have communicated with {confirmingMatch.matchName} and both parties have
-              agreed to this match.
+              Consider reaching out using the phone number or email on their match card.
             </p>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               <button
@@ -1287,7 +1389,48 @@ export default function TripsPage() {
                 className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
                 onClick={handleConfirmMatch}
               >
-                Confirm match
+                Send request
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {confirmingPool ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-6">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+            <h2 className="text-lg font-semibold text-slate-900">Join pool</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              A request will be sent to{" "}
+              {confirmingPool.members
+                .map((member) => member.profile?.name || "this traveler")
+                .join(" and ")}
+              . Your spot is only confirmed once they both accept.
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Consider reaching out using the phone numbers or emails on their match cards.
+            </p>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                className="w-full rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
+                onClick={() => setConfirmingPool(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                onClick={() => {
+                  const trip = trips.find((item) => item.id === confirmingPool.tripId);
+                  if (!trip) {
+                    setConfirmingPool(null);
+                    return;
+                  }
+                  handleJoinPool(trip, confirmingPool.members);
+                  setConfirmingPool(null);
+                }}
+              >
+                Send requests
               </button>
             </div>
           </div>

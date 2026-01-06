@@ -63,6 +63,8 @@ export async function POST(request) {
       [
         "id",
         "user_email",
+        "direction",
+        "flight_date",
         ...matchEmailFields,
         ...matchStatusFields
       ].join(",")
@@ -104,6 +106,23 @@ export async function POST(request) {
 
   const requesterSlot = getSlotForEmail(trip, matchTrip.user_email);
   const matchSlot = getSlotForEmail(matchTrip, trip.user_email);
+
+  const getMatchedPartners = (sourceTrip) => {
+    return matchEmailFields
+      .map((field, index) => {
+        const status = sourceTrip[matchStatusFields[index]];
+        return status === "matched" ? sourceTrip[field] : null;
+      })
+      .filter(Boolean);
+  };
+
+  const hasStatusWithEmail = (sourceTrip, email, status) => {
+    const slot = getSlotForEmail(sourceTrip, email);
+    if (slot === -1) {
+      return false;
+    }
+    return sourceTrip[matchStatusFields[slot]] === status;
+  };
 
   const updateTrip = async (rowId, updates) => {
     const { error } = await supabaseAdmin.from("trips").update(updates).eq("id", rowId);
@@ -153,6 +172,29 @@ export async function POST(request) {
         [matchEmailFields[matchSlot]]: null,
         [matchStatusFields[matchSlot]]: null
       });
+
+      const matchedPartners = getMatchedPartners(trip);
+      if (matchedPartners.length > 0) {
+        const { data: partnerTrips } = await supabaseAdmin
+          .from("trips")
+          .select(["id", "user_email", ...matchEmailFields, ...matchStatusFields].join(","))
+          .in("user_email", matchedPartners)
+          .eq("direction", trip.direction)
+          .eq("flight_date", trip.flight_date);
+
+        for (const partnerTrip of partnerTrips ?? []) {
+          const partnerSlot = getSlotForEmail(partnerTrip, matchTrip.user_email);
+          if (
+            partnerSlot !== -1 &&
+            partnerTrip[matchStatusFields[partnerSlot]] === "partner_approval_needed"
+          ) {
+            await updateTrip(partnerTrip.id, {
+              [matchEmailFields[partnerSlot]]: null,
+              [matchStatusFields[partnerSlot]]: null
+            });
+          }
+        }
+      }
     } catch (err) {
       return NextResponse.json({ error: err.message }, { status: 500 });
     }
@@ -161,11 +203,101 @@ export async function POST(request) {
   }
 
   if (action === "accept") {
-    if (requesterSlot === -1 || matchSlot === -1) {
+    if (requesterSlot === -1) {
       return NextResponse.json({ error: "Match not found" }, { status: 404 });
     }
 
     try {
+      const currentStatus = trip[matchStatusFields[requesterSlot]];
+      if (
+        currentStatus === "partner_approval_needed" &&
+        !hasStatusWithEmail(matchTrip, trip.user_email, "partner_approval_needed")
+      ) {
+        await updateTrip(trip.id, {
+          [matchEmailFields[requesterSlot]]: null,
+          [matchStatusFields[requesterSlot]]: null
+        });
+
+        const { data: possibleRequesters } = await supabaseAdmin
+          .from("trips")
+          .select(["id", "user_email", "direction", "flight_date", ...matchEmailFields, ...matchStatusFields].join(","))
+          .eq("direction", trip.direction)
+          .eq("flight_date", trip.flight_date);
+
+        const requesterTrip = (possibleRequesters ?? []).find((candidate) => {
+          return (
+            hasStatusWithEmail(candidate, trip.user_email, "matched") &&
+            hasStatusWithEmail(candidate, matchTrip.user_email, "partner_approval_needed")
+          );
+        });
+
+        if (!requesterTrip) {
+          return NextResponse.json({ ok: true });
+        }
+
+        const requesterPartners = getMatchedPartners(requesterTrip);
+        const { data: partnerTrips } = await supabaseAdmin
+          .from("trips")
+          .select(["id", "user_email", ...matchEmailFields, ...matchStatusFields].join(","))
+          .in("user_email", requesterPartners)
+          .eq("direction", requesterTrip.direction)
+          .eq("flight_date", requesterTrip.flight_date);
+
+        const pendingApprovals = (partnerTrips ?? []).filter((partnerTrip) => {
+          const partnerSlot = getSlotForEmail(partnerTrip, matchTrip.user_email);
+          return (
+            partnerSlot !== -1 &&
+            partnerTrip[matchStatusFields[partnerSlot]] === "partner_approval_needed"
+          );
+        });
+
+        if (pendingApprovals.length === 0) {
+          const requesterSlotWithCandidate = getSlotForEmail(requesterTrip, matchTrip.user_email);
+          const candidateSlotWithRequester = getSlotForEmail(matchTrip, requesterTrip.user_email);
+          if (requesterSlotWithCandidate !== -1 && candidateSlotWithRequester !== -1) {
+            await updateTrip(requesterTrip.id, {
+              [matchStatusFields[requesterSlotWithCandidate]]: "matched"
+            });
+            await updateTrip(matchTrip.id, {
+              [matchStatusFields[candidateSlotWithRequester]]: "matched"
+            });
+          }
+        }
+
+        return NextResponse.json({ ok: true });
+      }
+
+      if (matchSlot === -1) {
+        return NextResponse.json({ error: "Match not found" }, { status: 404 });
+      }
+
+      const requesterPartners = getMatchedPartners(matchTrip);
+      if (requesterPartners.length > 0) {
+        await updateTrip(trip.id, { [matchStatusFields[requesterSlot]]: "partner_approval_needed" });
+        await updateTrip(matchTrip.id, { [matchStatusFields[matchSlot]]: "partner_approval_needed" });
+
+        const { data: partnerTrips } = await supabaseAdmin
+          .from("trips")
+          .select(["id", "user_email", ...matchEmailFields, ...matchStatusFields].join(","))
+          .in("user_email", requesterPartners)
+          .eq("direction", matchTrip.direction)
+          .eq("flight_date", matchTrip.flight_date);
+
+        for (const partnerTrip of partnerTrips ?? []) {
+          const partnerSlot = getSlotForEmail(partnerTrip, trip.user_email);
+          const emptySlot = partnerSlot === -1 ? getEmptySlot(partnerTrip) : partnerSlot;
+          if (emptySlot === -1) {
+            continue;
+          }
+          await updateTrip(partnerTrip.id, {
+            [matchEmailFields[emptySlot]]: trip.user_email,
+            [matchStatusFields[emptySlot]]: "partner_approval_needed"
+          });
+        }
+
+        return NextResponse.json({ ok: true });
+      }
+
       await updateTrip(trip.id, { [matchStatusFields[requesterSlot]]: "matched" });
       await updateTrip(matchTrip.id, { [matchStatusFields[matchSlot]]: "matched" });
     } catch (err) {
@@ -176,11 +308,80 @@ export async function POST(request) {
   }
 
   if (action === "deny") {
-    if (requesterSlot === -1 || matchSlot === -1) {
+    if (requesterSlot === -1) {
       return NextResponse.json({ error: "Match not found" }, { status: 404 });
     }
 
     try {
+      const currentStatus = trip[matchStatusFields[requesterSlot]];
+      if (
+        currentStatus === "partner_approval_needed" &&
+        !hasStatusWithEmail(matchTrip, trip.user_email, "partner_approval_needed")
+      ) {
+        await updateTrip(trip.id, {
+          [matchEmailFields[requesterSlot]]: null,
+          [matchStatusFields[requesterSlot]]: null
+        });
+
+        const { data: possibleRequesters } = await supabaseAdmin
+          .from("trips")
+          .select(["id", "user_email", "direction", "flight_date", ...matchEmailFields, ...matchStatusFields].join(","))
+          .eq("direction", trip.direction)
+          .eq("flight_date", trip.flight_date);
+
+        const requesterTrip = (possibleRequesters ?? []).find((candidate) => {
+          return (
+            hasStatusWithEmail(candidate, trip.user_email, "matched") &&
+            hasStatusWithEmail(candidate, matchTrip.user_email, "partner_approval_needed")
+          );
+        });
+
+        if (requesterTrip) {
+          const requesterSlotWithCandidate = getSlotForEmail(requesterTrip, matchTrip.user_email);
+          const candidateSlotWithRequester = getSlotForEmail(matchTrip, requesterTrip.user_email);
+
+          if (requesterSlotWithCandidate !== -1) {
+            await updateTrip(requesterTrip.id, {
+              [matchEmailFields[requesterSlotWithCandidate]]: null,
+              [matchStatusFields[requesterSlotWithCandidate]]: null
+            });
+          }
+          if (candidateSlotWithRequester !== -1) {
+            await updateTrip(matchTrip.id, {
+              [matchEmailFields[candidateSlotWithRequester]]: null,
+              [matchStatusFields[candidateSlotWithRequester]]: null
+            });
+          }
+
+          const requesterPartners = getMatchedPartners(requesterTrip);
+          const { data: partnerTrips } = await supabaseAdmin
+            .from("trips")
+            .select(["id", "user_email", ...matchEmailFields, ...matchStatusFields].join(","))
+            .in("user_email", requesterPartners)
+            .eq("direction", requesterTrip.direction)
+            .eq("flight_date", requesterTrip.flight_date);
+
+          for (const partnerTrip of partnerTrips ?? []) {
+            const partnerSlot = getSlotForEmail(partnerTrip, matchTrip.user_email);
+            if (
+              partnerSlot !== -1 &&
+              partnerTrip[matchStatusFields[partnerSlot]] === "partner_approval_needed"
+            ) {
+              await updateTrip(partnerTrip.id, {
+                [matchEmailFields[partnerSlot]]: null,
+                [matchStatusFields[partnerSlot]]: null
+              });
+            }
+          }
+        }
+
+        return NextResponse.json({ ok: true });
+      }
+
+      if (matchSlot === -1) {
+        return NextResponse.json({ error: "Match not found" }, { status: 404 });
+      }
+
       await updateTrip(trip.id, {
         [matchEmailFields[requesterSlot]]: null,
         [matchStatusFields[requesterSlot]]: null
