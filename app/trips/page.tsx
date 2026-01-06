@@ -317,29 +317,19 @@ export default function TripsPage() {
             });
           });
 
-          const filtered = candidates
-            .filter((candidate) => {
-              if (candidate.trip_status === "Matched and satisfied") {
-                return false;
-              }
+          const confirmedEmails = new Set(
+            [0, 1, 2, 3, 4, 5]
+              .map((slot) => {
+                const emailKey = `match_email_${slot}` as keyof TripRecord;
+                const statusKey = `match_status_${slot}` as keyof TripRecord;
+                const emailValue = trip[emailKey];
+                const statusValue = trip[statusKey];
+                return statusValue === "matched" ? (emailValue as string | null) : null;
+              })
+              .filter(Boolean) as string[]
+          );
 
-              if (!windowsOverlap(trip.window_start, trip.window_end, candidate.window_start, candidate.window_end)) {
-                return false;
-              }
-
-              const candidateProfile = profileMap.get(candidate.user_email);
-              if (!candidateProfile?.sex) {
-                return false;
-              }
-
-              const currentAllowsCandidate = allowsSex(
-                trip.allowed_partner_sex,
-                candidateProfile.sex
-              );
-              const candidateAllowsCurrent = allowsSex(candidate.allowed_partner_sex, profile.sex ?? "");
-
-              return currentAllowsCandidate && candidateAllowsCurrent;
-            })
+          const enriched = candidates
             .map((candidate) => ({
               ...candidate,
               profile: profileMap.get(candidate.user_email) ?? null
@@ -350,13 +340,44 @@ export default function TripsPage() {
               return aDiff - bDiff;
             });
 
-          const paired = filtered.filter((candidate) => {
+          const confirmedCandidates = enriched.filter((candidate) =>
+            confirmedEmails.has(candidate.user_email)
+          );
+
+          const potentialCandidates = enriched.filter((candidate) => {
+            if (confirmedEmails.has(candidate.user_email)) {
+              return false;
+            }
+
+            if (candidate.trip_status === "Matched and satisfied") {
+              return false;
+            }
+
+            if (!windowsOverlap(trip.window_start, trip.window_end, candidate.window_start, candidate.window_end)) {
+              return false;
+            }
+
+            const candidateProfile = candidate.profile;
+            if (!candidateProfile?.sex) {
+              return false;
+            }
+
+            const currentAllowsCandidate = allowsSex(
+              trip.allowed_partner_sex,
+              candidateProfile.sex
+            );
+            const candidateAllowsCurrent = allowsSex(candidate.allowed_partner_sex, profile.sex ?? "");
+
+            return currentAllowsCandidate && candidateAllowsCurrent;
+          });
+
+          const paired = potentialCandidates.filter((candidate) => {
             for (let i = 0; i < 6; i += 1) {
               const emailKey = `match_email_${i}` as keyof MatchRecord;
               const statusKey = `match_status_${i}` as keyof MatchRecord;
               const matchedEmail = candidate[emailKey] as string | null;
               const matchedStatus = candidate[statusKey] as string | null;
-              if (matchedStatus === "matched" && matchedEmail && !filtered.find((item) => item.user_email === matchedEmail)) {
+              if (matchedStatus === "matched" && matchedEmail && !potentialCandidates.find((item) => item.user_email === matchedEmail)) {
                 return false;
               }
             }
@@ -380,7 +401,7 @@ export default function TripsPage() {
             return true;
           });
 
-          return [trip.id, finalList] as const;
+          return [trip.id, [...confirmedCandidates, ...finalList]] as const;
         })
       );
 
@@ -677,6 +698,39 @@ export default function TripsPage() {
     fetchTrips(email);
   };
 
+  const leavePool = async (trip: TripRecord, poolMembers: MatchRecord[]) => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token;
+
+    if (!accessToken) {
+      setError("We couldn't confirm your session. Please log in again.");
+      return;
+    }
+
+    for (const member of poolMembers) {
+      const response = await fetch("/api/match-requests", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          action: "remove",
+          tripId: trip.id,
+          matchedTripId: member.id
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        setError(data?.error || "Unable to remove match.");
+        return;
+      }
+    }
+
+    fetchTrips(email);
+  };
+
   const handleJoinPool = async (trip: TripRecord, poolMembers: MatchRecord[]) => {
     if (!email) {
       return;
@@ -750,7 +804,13 @@ export default function TripsPage() {
           const isMatchedTripStatus = MATCHED_TRIP_STATUS_OPTIONS.includes(
             trip.trip_status ?? ""
           );
-          const matchGroups = buildMatchGroups(tripMatches);
+          const confirmedMatches = tripMatches.filter(
+            (match) => getMatchStatus(trip, match.user_email) === "matched"
+          );
+          const potentialMatches = tripMatches.filter(
+            (match) => getMatchStatus(trip, match.user_email) !== "matched"
+          );
+          const matchGroups = buildMatchGroups(potentialMatches);
 
           const renderMatchCard = (match: MatchRecord) => (
             <div key={match.id} className="rounded-md border border-slate-200 bg-white p-3">
@@ -982,6 +1042,42 @@ export default function TripsPage() {
                 </div>
               </div>
 
+              {confirmedMatches.length > 0 ? (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Confirmed matches
+                  </p>
+                  {confirmedMatches.length > 1 ? (
+                    <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Pool
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            You&apos;re confirmed with multiple travelers.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-white"
+                          onClick={() => leavePool(trip, confirmedMatches)}
+                        >
+                          Leave pool
+                        </button>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {confirmedMatches.map((match) => renderMatchCard(match))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {confirmedMatches.map((match) => renderMatchCard(match))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
               <div className="mt-4 border-t border-slate-200 pt-3">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
@@ -1084,7 +1180,7 @@ export default function TripsPage() {
                 </p>
                 {loadingMatches ? (
                   <p className="mt-2 text-sm text-slate-600">Loading matches...</p>
-                ) : tripMatches.length === 0 ? (
+                ) : potentialMatches.length === 0 ? (
                   <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
                     <p className="text-base font-semibold">Don&apos;t worry!</p>
                     <p className="mt-1 text-sm text-emerald-900">
