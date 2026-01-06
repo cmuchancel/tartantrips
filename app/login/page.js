@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
 const CMU_EMAIL_REGEX = /@([a-z0-9-]+\.)*cmu\.edu$/i;
+const ALLOW_ANY_EMAIL = process.env.NEXT_PUBLIC_ALLOW_ANY_EMAIL === "true";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -62,7 +63,7 @@ export default function LoginPage() {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (!CMU_EMAIL_REGEX.test(normalizedEmail)) {
+    if (!ALLOW_ANY_EMAIL && !CMU_EMAIL_REGEX.test(normalizedEmail)) {
       setError("Please use a CMU email ending in .cmu.edu.");
       return;
     }
