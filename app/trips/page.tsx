@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
@@ -198,12 +198,12 @@ const TRIP_STATUS_STEPS = [
   }
 ] as const;
 
-const MATCHED_TRIP_STATUS_OPTIONS = [
+const MATCHED_TRIP_STATUS_OPTIONS: readonly string[] = [
   "Matched and still looking",
   "Matched and satisfied"
 ] as const;
 
-export default function TripsPage() {
+function TripsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const focusTripId = searchParams.get("tripId");
@@ -1526,5 +1526,19 @@ export default function TripsPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function TripsPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-white px-6 py-12">
+          <p className="text-sm text-slate-600">Loading your trips...</p>
+        </main>
+      }
+    >
+      <TripsPageContent />
+    </Suspense>
   );
 }

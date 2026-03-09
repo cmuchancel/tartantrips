@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import AppNav from "../components/AppNav";
@@ -22,14 +22,6 @@ type TripRecord = {
   user_email: string;
   direction: string;
   flight_date: string;
-  flight_time: string;
-  allowed_partner_sex: string;
-  willing_to_wait_until_time: string | null;
-  min_hours_before: number | null;
-  max_hours_before: number | null;
-  window_start: string | null;
-  window_end: string | null;
-  created_at: string;
 };
 
 type ProfileData = {
@@ -89,7 +81,7 @@ const addHours = (dateValue: Date, hours: number) => {
   return new Date(dateValue.getTime() + hours * 60 * 60 * 1000);
 };
 
-export default function PlanTripPage() {
+function PlanTripPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tripId = searchParams.get("tripId");
@@ -848,5 +840,19 @@ export default function PlanTripPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function PlanTripPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-white px-6 py-12">
+          <p className="text-sm text-slate-600">Loading trip planner...</p>
+        </main>
+      }
+    >
+      <PlanTripPageContent />
+    </Suspense>
   );
 }

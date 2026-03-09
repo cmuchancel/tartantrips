@@ -36,3 +36,4 @@ TartanTrips matches CMU students who want to share rides to/from Pittsburgh Inte
 - `app/api/match-requests/route.js`: handles match requests and status transitions.
 - `app/api/trip-status-sync/route.js`: syncs trip status across confirmed matches.
 - `app/api/match-notifications/route.js`: sends new match email notifications (Resend).
+- `app/auth/confirm/page.js`: email-confirmation handoff page for the native iOS app.
