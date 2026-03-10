@@ -1,0 +1,23 @@
+name: TartanTrips
+options:
+  minimumXcodeGenVersion: 2.38.0
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift.git
+    from: 2.1.0
+targets:
+  TartanTrips:
+    type: application
+    platform: iOS
+    sources:
+      - TartanTrips
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: edu.cmu.tartantrips.ios
+        INFOPLIST_FILE: TartanTrips/Config/Info.plist
+        SWIFT_VERSION: "5.10"
+    dependencies:
+      - package: Supabase
