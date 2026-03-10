@@ -45,6 +45,9 @@ const initialProfileState: ProfileData = {
   email: ""
 };
 
+const FORM_INPUT_CLASS =
+  "mt-1 w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-slate-900 shadow-sm shadow-slate-900/5 focus:border-slate-400 focus:outline-none focus:ring-4 focus:ring-slate-200/60";
+
 const toDateTimeEST = (dateValue: string, timeValue: string) => {
   const [year, month, day] = dateValue.split("-").map(Number);
   const [hour, minute = 0] = timeValue.split(":").map(Number);
@@ -143,7 +146,7 @@ export default function PitUnmatchedPage() {
       );
       setProfileSaved(savedComplete);
       if (savedComplete) {
-        setProfileNotice("Profile information remembered.");
+        setProfileNotice("Profile ready. We can use your saved details for live matching.");
       }
       setLoading(false);
     };
@@ -190,7 +193,7 @@ export default function PitUnmatchedPage() {
     }
 
     setProfileSaved(true);
-    setProfileNotice("Profile information saved.");
+    setProfileNotice("Profile ready. We can use your saved details for live matching.");
     setProfileSaving(false);
   };
 
@@ -300,7 +303,7 @@ export default function PitUnmatchedPage() {
       return;
     }
 
-    setSubmitSuccess("We saved your arrival window. Looking for matches...");
+    setSubmitSuccess("Your arrival window is saved. Looking for the best live matches...");
     await loadCandidates(windowEnd);
     setHasSubmitted(true);
     setSubmitting(false);
@@ -319,220 +322,276 @@ export default function PitUnmatchedPage() {
   });
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-6 py-12">
-      <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-2">
-          <AppNav />
-          <h1 className="text-2xl font-semibold text-slate-900">Landed at PIT</h1>
-          {loading ? (
-            <p className="text-sm text-slate-600">Loading your session...</p>
-          ) : (
-            <p className="text-sm text-slate-700">
-              Signed in as <span className="font-medium">{email}</span>
-            </p>
-          )}
-        </div>
+    <main className="page-shell">
+      <div className="page-content space-y-6">
+        <AppNav />
 
-        {loading ? null : (
-          <div className="mt-6 space-y-6">
-            {!profileSaved ? (
-              <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-                <p className="font-semibold">Complete your profile</p>
-                <p>
-                  Add your name, major, graduation year, sex, and phone so we can match you safely.
+        <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+          <section className="glass-panel rounded-[2.25rem] p-6 md:p-8">
+            <div className="flex flex-col gap-2">
+              <span className="section-chip">Live arrival help</span>
+              <h1 className="mt-2 text-4xl font-semibold leading-tight text-slate-900 md:text-5xl">
+                Already at PIT? We can still help you find a safer shared ride.
+              </h1>
+              {loading ? (
+                <p className="mt-2 text-sm text-slate-600">Loading your session...</p>
+              ) : (
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Signed in as <span className="font-semibold text-slate-900">{email}</span>. Tell
+                  us how long you can wait and we will surface nearby CMU riders with overlapping
+                  arrival windows.
                 </p>
-                <form className="space-y-3" onSubmit={handleProfileSave}>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-xs font-medium text-amber-900" htmlFor="inlineName">
-                        Name
-                      </label>
-                      <input
-                        id="inlineName"
-                        name="inlineName"
-                        type="text"
-                        value={profile.name}
-                        onChange={(event) => updateProfile("name", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-amber-900" htmlFor="inlineMajor">
-                        Major
-                      </label>
-                      <input
-                        id="inlineMajor"
-                        name="inlineMajor"
-                        type="text"
-                        value={profile.major}
-                        onChange={(event) => updateProfile("major", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-amber-900" htmlFor="inlineGradYear">
-                        Graduation year
-                      </label>
-                      <input
-                        id="inlineGradYear"
-                        name="inlineGradYear"
-                        type="text"
-                        value={profile.graduationYear}
-                        onChange={(event) => updateProfile("graduationYear", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-amber-900" htmlFor="inlineSex">
-                        Sex / Gender
-                      </label>
-                      <select
-                        id="inlineSex"
-                        name="inlineSex"
-                        value={profile.sex}
-                        onChange={(event) => updateProfile("sex", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        required
+              )}
+            </div>
+
+            {loading ? null : (
+              <div className="mt-8 space-y-6">
+                {!profileSaved ? (
+                  <div className="space-y-4 rounded-[1.8rem] border border-amber-200 bg-[#fff7ec] px-5 py-5 text-sm text-amber-900">
+                    <p className="font-semibold text-amber-950">Create the profile riders will see</p>
+                    <p className="leading-6">
+                      We need this so live matching can work and so the person you may split a ride
+                      with knows who they are coordinating with.
+                    </p>
+                    <form className="space-y-3" onSubmit={handleProfileSave}>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="block text-xs font-medium text-amber-900" htmlFor="inlineName">
+                            Name
+                          </label>
+                          <input
+                            id="inlineName"
+                            name="inlineName"
+                            type="text"
+                            value={profile.name}
+                            onChange={(event) => updateProfile("name", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-amber-900" htmlFor="inlineMajor">
+                            Major
+                          </label>
+                          <input
+                            id="inlineMajor"
+                            name="inlineMajor"
+                            type="text"
+                            value={profile.major}
+                            onChange={(event) => updateProfile("major", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-amber-900" htmlFor="inlineGradYear">
+                            Graduation year
+                          </label>
+                          <input
+                            id="inlineGradYear"
+                            name="inlineGradYear"
+                            type="text"
+                            value={profile.graduationYear}
+                            onChange={(event) => updateProfile("graduationYear", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-amber-900" htmlFor="inlineSex">
+                            Sex / Gender
+                          </label>
+                          <select
+                            id="inlineSex"
+                            name="inlineSex"
+                            value={profile.sex}
+                            onChange={(event) => updateProfile("sex", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          >
+                            <option value="">Select one</option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Non-binary">Non-binary</option>
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-amber-900" htmlFor="inlinePhone">
+                            Phone
+                          </label>
+                          <input
+                            id="inlinePhone"
+                            name="inlinePhone"
+                            type="tel"
+                            value={profile.phone}
+                            onChange={(event) => updateProfile("phone", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          />
+                        </div>
+                      </div>
+                      {profileError ? (
+                        <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700" role="alert">
+                          {profileError}
+                        </p>
+                      ) : null}
+                      <button
+                        type="submit"
+                        className="primary-cta w-full disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={profileSaving}
                       >
-                        <option value="">Select one</option>
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                        <option value="Non-binary">Non-binary</option>
-                      </select>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-medium text-amber-900" htmlFor="inlinePhone">
-                        Phone
-                      </label>
-                      <input
-                        id="inlinePhone"
-                        name="inlinePhone"
-                        type="tel"
-                        value={profile.phone}
-                        onChange={(event) => updateProfile("phone", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        required
-                      />
-                    </div>
+                        {profileSaving ? "Saving profile..." : "Save profile for live matching"}
+                      </button>
+                    </form>
                   </div>
-                  {profileError ? (
-                    <p className="text-xs text-red-700" role="alert">
-                      {profileError}
+                ) : null}
+
+                {profileSaved && profileNotice ? (
+                  <div className="rounded-[1.6rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                    {profileNotice}
+                  </div>
+                ) : null}
+
+                <form className="space-y-4" onSubmit={handleSubmit}>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700" htmlFor="waitMinutes">
+                      How long are you willing to wait for a shared ride? (minutes)
+                    </label>
+                    <input
+                      id="waitMinutes"
+                      name="waitMinutes"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={waitMinutes}
+                      onChange={(event) => setWaitMinutes(event.target.value)}
+                      className={FORM_INPUT_CLASS}
+                      required
+                    />
+                  </div>
+
+                  {submitError ? (
+                    <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                      {submitError}
                     </p>
                   ) : null}
+                  {submitSuccess ? (
+                    <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700" role="status">
+                      {submitSuccess}
+                    </p>
+                  ) : null}
+
                   <button
                     type="submit"
-                    className="w-full rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={profileSaving}
+                    className="primary-cta w-full disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={submitting || !profileSaved}
                   >
-                    {profileSaving ? "Saving profile..." : "Save profile"}
+                    {submitting ? "Saving..." : "Find my live matches"}
                   </button>
                 </form>
-              </div>
-            ) : null}
 
-            {profileSaved && profileNotice ? (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                {profileNotice}
-              </div>
-            ) : null}
-
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div>
-                <label className="block text-sm font-medium text-slate-700" htmlFor="waitMinutes">
-                  How long are you willing to wait for a shared ride? (minutes)
-                </label>
-                <input
-                  id="waitMinutes"
-                  name="waitMinutes"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={waitMinutes}
-                  onChange={(event) => setWaitMinutes(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-                  required
-                />
-              </div>
-
-              {submitError ? (
-                <p className="text-sm text-red-600" role="alert">
-                  {submitError}
-                </p>
-              ) : null}
-              {submitSuccess ? (
-                <p className="text-sm text-green-600" role="status">
-                  {submitSuccess}
-                </p>
-              ) : null}
-
-              <button
-                type="submit"
-                className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={submitting || !profileSaved}
-              >
-                {submitting ? "Saving..." : "Find matches"}
-              </button>
-            </form>
-
-            {hasSubmitted ? (
-              <>
-                <div className="border-t border-slate-200 pt-6">
-                  <h2 className="text-sm font-semibold text-slate-900">People who are currently at the airport</h2>
-                  {loadingCandidates ? (
-                    <p className="mt-3 text-sm text-slate-600">Loading matches...</p>
-                  ) : nowCandidates.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-600">No one landed within your window yet.</p>
-                  ) : (
-                    <div className="mt-3 space-y-3">
-                      {nowCandidates.map((candidate) => (
-                        <div key={candidate.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                          <p className="text-sm font-semibold text-slate-900">
-                            {candidate.profile?.name || "CMU student"}
-                          </p>
-                          <p className="text-xs text-slate-600">
-                            Landed at {candidate.flight_time} on {candidate.flight_date}
-                          </p>
-                          <p className="text-xs text-slate-600">
-                            Major: {candidate.profile?.major || "Not provided"} · Year: {candidate.profile?.graduation_year || "N/A"}
-                          </p>
+                {hasSubmitted ? (
+                  <>
+                    <div className="border-t border-slate-200/70 pt-6">
+                      <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Riders already at the airport
+                      </h2>
+                      {loadingCandidates ? (
+                        <p className="mt-3 text-sm text-slate-600">Loading matches...</p>
+                      ) : nowCandidates.length === 0 ? (
+                        <p className="mt-3 text-sm text-slate-600">No one landed within your window yet.</p>
+                      ) : (
+                        <div className="mt-3 space-y-3">
+                          {nowCandidates.map((candidate) => (
+                            <div key={candidate.id} className="rounded-[1.3rem] border border-slate-200 bg-white/70 p-4">
+                              <p className="text-sm font-semibold text-slate-900">
+                                {candidate.profile?.name || "CMU student"}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-600">
+                                Landed at {candidate.flight_time} on {candidate.flight_date}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-600">
+                                Major: {candidate.profile?.major || "Not provided"} · Year: {candidate.profile?.graduation_year || "N/A"}
+                              </p>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
-                </div>
 
-                <div className="border-t border-slate-200 pt-6">
-                  <h2 className="text-sm font-semibold text-slate-900">People who land soon</h2>
-                  {loadingCandidates ? (
-                    <p className="mt-3 text-sm text-slate-600">Loading matches...</p>
-                  ) : soonCandidates.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-600">No upcoming arrivals within your window yet.</p>
-                  ) : (
-                    <div className="mt-3 space-y-3">
-                      {soonCandidates.map((candidate) => (
-                        <div key={candidate.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                          <p className="text-sm font-semibold text-slate-900">
-                            {candidate.profile?.name || "CMU student"}
-                          </p>
-                          <p className="text-xs text-slate-600">
-                            Arrives at {candidate.flight_time} on {candidate.flight_date}
-                          </p>
-                          <p className="text-xs text-slate-600">
-                            Major: {candidate.profile?.major || "Not provided"} · Year: {candidate.profile?.graduation_year || "N/A"}
-                          </p>
+                    <div className="border-t border-slate-200/70 pt-6">
+                      <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Riders landing soon
+                      </h2>
+                      {loadingCandidates ? (
+                        <p className="mt-3 text-sm text-slate-600">Loading matches...</p>
+                      ) : soonCandidates.length === 0 ? (
+                        <p className="mt-3 text-sm text-slate-600">No upcoming arrivals within your window yet.</p>
+                      ) : (
+                        <div className="mt-3 space-y-3">
+                          {soonCandidates.map((candidate) => (
+                            <div key={candidate.id} className="rounded-[1.3rem] border border-slate-200 bg-white/70 p-4">
+                              <p className="text-sm font-semibold text-slate-900">
+                                {candidate.profile?.name || "CMU student"}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-600">
+                                Arrives at {candidate.flight_time} on {candidate.flight_date}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-600">
+                                Major: {candidate.profile?.major || "Not provided"} · Year: {candidate.profile?.graduation_year || "N/A"}
+                              </p>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
+                  </>
+                ) : null}
+              </div>
+            )}
+          </section>
+
+          <aside className="space-y-6">
+            <section className="glass-panel rounded-[2rem] p-6 md:p-8">
+              <span className="section-chip">Why we verify first</span>
+              <h2 className="mt-4 text-3xl font-semibold text-slate-900">
+                Live matching still starts with trust.
+              </h2>
+              <p className="mt-4 text-base leading-7 text-slate-700">
+                Even in a last-minute airport situation, we keep the same safety logic: verified
+                identity, a real rider profile, and a clear arrival window.
+              </p>
+            </section>
+
+            <section className="glass-panel rounded-[2rem] p-6 md:p-8">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+                What this page is doing
+              </p>
+              <div className="mt-5 space-y-4">
+                <div className="soft-card">
+                  <p className="text-sm font-semibold text-slate-900">Security and safe rides</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Email verification helps make sure every live match still comes from a real
+                    CMU rider.
+                  </p>
                 </div>
-              </>
-            ) : null}
-          </div>
-        )}
+                <div className="soft-card">
+                  <p className="text-sm font-semibold text-slate-900">Comfort before pickup</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Your profile gives both sides more confidence about who they are meeting in the
+                    airport pickup flow.
+                  </p>
+                </div>
+                <div className="soft-card">
+                  <p className="text-sm font-semibold text-slate-900">Real-time filtering</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    We narrow the list to riders whose arrival times fit the wait window you set.
+                  </p>
+                </div>
+              </div>
+            </section>
+          </aside>
+        </div>
       </div>
     </main>
   );

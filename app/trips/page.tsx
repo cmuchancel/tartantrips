@@ -423,7 +423,7 @@ function TripsPageContent() {
     };
 
     fetchMatchesForTrips();
-  }, [email, trips]);
+  }, [email, profile?.sex, trips]);
 
   const getMatchSlot = (trip: TripRecord, otherEmail: string) => {
     for (let i = 0; i < 6; i += 1) {
@@ -844,15 +844,18 @@ function TripsPageContent() {
                 <div className="flex gap-3">
                   <div className="h-12 w-12 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
                     {match.profile?.avatar_path ? (
-                      <img
-                        src={
-                          supabase.storage
-                            .from("avatars")
-                            .getPublicUrl(match.profile.avatar_path).data.publicUrl
-                        }
-                        alt={match.profile?.name || "Profile"}
-                        className="h-full w-full object-cover"
-                      />
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={
+                            supabase.storage
+                              .from("avatars")
+                              .getPublicUrl(match.profile.avatar_path).data.publicUrl
+                          }
+                          alt={match.profile?.name || "Profile"}
+                          className="h-full w-full object-cover"
+                        />
+                      </>
                     ) : null}
                   </div>
                   <div className="space-y-1">
@@ -1329,10 +1332,10 @@ function TripsPageContent() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-6 py-12">
+    <main className="page-shell">
       {confirmingMatch ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-6">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+          <div className="glass-panel w-full max-w-md rounded-[2rem] p-6 shadow-lg">
             <h2 className="text-lg font-semibold text-slate-900">Request match</h2>
             {(() => {
               const trip = trips.find((item) => item.id === confirmingMatch.tripId);
@@ -1379,14 +1382,14 @@ function TripsPageContent() {
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
-                className="w-full rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
+                className="secondary-cta w-full"
                 onClick={() => setConfirmingMatch(null)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                className="primary-cta w-full"
                 onClick={handleConfirmMatch}
               >
                 Send request
@@ -1397,7 +1400,7 @@ function TripsPageContent() {
       ) : null}
       {confirmingPool ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-6">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+          <div className="glass-panel w-full max-w-md rounded-[2rem] p-6 shadow-lg">
             <h2 className="text-lg font-semibold text-slate-900">Join pool</h2>
             <p className="mt-2 text-sm text-slate-600">
               A request will be sent to{" "}
@@ -1412,14 +1415,14 @@ function TripsPageContent() {
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
-                className="w-full rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
+                className="secondary-cta w-full"
                 onClick={() => setConfirmingPool(null)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                className="primary-cta w-full"
                 onClick={() => {
                   const trip = trips.find((item) => item.id === confirmingPool.tripId);
                   if (!trip) {
@@ -1438,7 +1441,7 @@ function TripsPageContent() {
       ) : null}
       {removingMatch ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-6">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+          <div className="glass-panel w-full max-w-md rounded-[2rem] p-6 shadow-lg">
             <h2 className="text-lg font-semibold text-slate-900">Remove match</h2>
             <p className="mt-2 text-sm text-slate-600">
               This will remove the confirmed match with {removingMatch.matchName} for both parties.
@@ -1446,14 +1449,14 @@ function TripsPageContent() {
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
-                className="w-full rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
+                className="secondary-cta w-full"
                 onClick={() => setRemovingMatch(null)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                className="primary-cta w-full"
                 onClick={() => {
                   updateMatchRequestStatus(removingMatch.tripId, removingMatch.matchId, "remove");
                   setRemovingMatch(null);
@@ -1465,65 +1468,81 @@ function TripsPageContent() {
           </div>
         </div>
       ) : null}
-      <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-2">
-          <AppNav />
-          <h1 className="text-2xl font-semibold text-slate-900">My Trips</h1>
-          {loading ? (
-            <p className="text-sm text-slate-600">Loading your session...</p>
-          ) : (
-            <p className="text-sm text-slate-700">
-              Signed in as <span className="font-medium">{email}</span>
-            </p>
+      <div className="page-content space-y-6">
+        <AppNav />
+
+        <div className="glass-panel rounded-[2.25rem] p-6 md:p-8">
+          <div className="flex flex-col gap-2">
+            <span className="section-chip">Trip management</span>
+            <h1 className="mt-2 text-4xl font-semibold leading-tight text-slate-900 md:text-5xl">
+              Track your ride requests and review the matches that fit best.
+            </h1>
+            {loading ? (
+              <p className="mt-2 text-sm text-slate-600">Loading your session...</p>
+            ) : (
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Signed in as <span className="font-semibold text-slate-900">{email}</span>. This
+                is where you review verified riders, confirm requests, and keep your plans current.
+              </p>
+            )}
+          </div>
+
+          {loading ? null : (
+            <div className="mt-8 space-y-6">
+              <div className="rounded-[1.8rem] border border-white/70 bg-white/60 px-5 py-5">
+                <p className="text-sm font-semibold text-slate-900">Why this page matters</p>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                  You are not just browsing names. You are comparing verified students whose timing,
+                  comfort filters, and rider profiles align with your trip.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <Link className="primary-cta" href="/plan">
+                  Plan a trip
+                </Link>
+                <button
+                  type="button"
+                  className="text-sm font-medium text-slate-600 hover:text-slate-900"
+                  onClick={() => fetchTrips(email)}
+                  disabled={loadingTrips}
+                >
+                  {loadingTrips ? "Refreshing..." : "Refresh"}
+                </button>
+              </div>
+
+              {error ? (
+                <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                  {error}
+                </p>
+              ) : null}
+
+              <section className="border-t border-slate-200/70 pt-6">
+                {loadingTrips ? (
+                  <p className="mt-3 text-sm text-slate-600">Loading trips...</p>
+                ) : (
+                  <div className="space-y-6">
+                    <div>
+                      <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Upcoming trips
+                      </h2>
+                      {renderTripsList(
+                        futureTrips,
+                        "No upcoming trips yet. Plan one to get started."
+                      )}
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Past trips
+                      </h2>
+                      {renderTripsList(pastTrips, "No past trips yet.")}
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
           )}
         </div>
-
-        {loading ? null : (
-          <div className="mt-6 space-y-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <Link
-                className="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                href="/plan"
-              >
-                Plan a trip
-              </Link>
-              <button
-                type="button"
-                className="text-sm font-medium text-slate-600 hover:text-slate-900"
-                onClick={() => fetchTrips(email)}
-                disabled={loadingTrips}
-              >
-                {loadingTrips ? "Refreshing..." : "Refresh"}
-              </button>
-            </div>
-
-            {error ? (
-              <p className="text-sm text-red-600" role="alert">
-                {error}
-              </p>
-            ) : null}
-
-            <section className="border-t border-slate-200 pt-6">
-              {loadingTrips ? (
-                <p className="mt-3 text-sm text-slate-600">Loading trips...</p>
-              ) : (
-                <div className="space-y-6">
-                  <div>
-                    <h2 className="text-sm font-semibold text-slate-900">Upcoming trips</h2>
-                    {renderTripsList(
-                      futureTrips,
-                      "No upcoming trips yet. Plan one to get started."
-                    )}
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-semibold text-slate-900">Past trips</h2>
-                    {renderTripsList(pastTrips, "No past trips yet.")}
-                  </div>
-                </div>
-              )}
-            </section>
-          </div>
-        )}
       </div>
     </main>
   );
@@ -1533,8 +1552,10 @@ export default function TripsPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-white px-6 py-12">
-          <p className="text-sm text-slate-600">Loading your trips...</p>
+        <main className="page-shell">
+          <div className="page-content flex min-h-screen items-center justify-center">
+            <p className="text-sm text-slate-600">Loading your trips...</p>
+          </div>
         </main>
       }
     >

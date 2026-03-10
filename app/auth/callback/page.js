@@ -63,9 +63,14 @@ function AuthCallbackContent() {
 
 export default function AuthCallbackPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-6">
-      <div className="text-center">
-        <p className="text-sm text-slate-600">Signing you in...</p>
+    <main className="page-shell">
+      <div className="page-content flex min-h-screen items-center justify-center">
+        <div className="glass-panel rounded-[2rem] px-8 py-10 text-center">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Secure sign-in
+          </p>
+          <p className="mt-3 text-base text-slate-600">Signing you in...</p>
+        </div>
         <Suspense fallback={null}>
           <AuthCallbackContent />
         </Suspense>

@@ -52,6 +52,9 @@ const initialProfileState: ProfileData = {
   email: ""
 };
 
+const FORM_INPUT_CLASS =
+  "mt-1 w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-slate-900 shadow-sm shadow-slate-900/5 focus:border-slate-400 focus:outline-none focus:ring-4 focus:ring-slate-200/60";
+
 const parseHours = (value: string) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : NaN;
@@ -162,7 +165,7 @@ function PlanTripPageContent() {
       );
       setProfileSaved(savedComplete);
       if (savedComplete) {
-        setProfileNotice("Profile information remembered.");
+        setProfileNotice("Profile ready. Matching can use your saved details.");
       }
       setLoading(false);
       fetchTrips(data.user.email ?? "");
@@ -310,8 +313,8 @@ function PlanTripPageContent() {
       return;
     }
 
-    setProfileSuccess("Profile information saved.");
-    setProfileNotice("Profile information saved.");
+    setProfileSuccess("Profile saved. You are ready for matching.");
+    setProfileNotice("Profile ready. Matching can use your saved details.");
     setProfileSaved(true);
     setProfileSaving(false);
   };
@@ -510,334 +513,393 @@ function PlanTripPageContent() {
   const timeLabel = isArrival ? "Flight arrival time" : "Flight departure time";
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-6 py-12">
-      <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-2">
-          <AppNav />
-          <h1 className="text-2xl font-semibold text-slate-900">Plan a trip</h1>
-          {loading ? (
-            <p className="text-sm text-slate-600">Loading your session...</p>
-          ) : (
-            <p className="text-sm text-slate-700">
-              Signed in as <span className="font-medium">{email}</span>
-            </p>
-          )}
-        </div>
+    <main className="page-shell">
+      <div className="page-content space-y-6">
+        <AppNav />
 
-        {loading ? null : (
-          <div className="mt-6 space-y-6">
-            {!profileSaved ? (
-              <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-                <p className="font-semibold">Complete your profile</p>
-                <p>
-                  Add your name, major, graduation year, sex, and phone so we can match you safely.
+        <div className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
+          <section className="glass-panel rounded-[2.25rem] p-6 md:p-8">
+            <div className="flex flex-col gap-2">
+              <span className="section-chip">Trip planning</span>
+              <h1 className="mt-2 text-4xl font-semibold leading-tight text-slate-900 md:text-5xl">
+                Tell us when you travel and who you would feel comfortable riding with.
+              </h1>
+              {loading ? (
+                <p className="mt-2 text-sm text-slate-600">Loading your session...</p>
+              ) : (
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Signed in as <span className="font-semibold text-slate-900">{email}</span>. We
+                  use your trip timing, comfort filters, and verified profile to surface better
+                  ride matches.
                 </p>
-                <form className="space-y-3" onSubmit={handleProfileSave}>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-xs font-medium text-amber-900" htmlFor="inlineName">
-                        Name
-                      </label>
-                      <input
-                        id="inlineName"
-                        name="inlineName"
-                        type="text"
-                        value={profile.name}
-                        onChange={(event) => updateProfile("name", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-amber-900" htmlFor="inlineMajor">
-                        Major
-                      </label>
-                      <input
-                        id="inlineMajor"
-                        name="inlineMajor"
-                        type="text"
-                        value={profile.major}
-                        onChange={(event) => updateProfile("major", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-amber-900" htmlFor="inlineGradYear">
-                        Graduation year
-                      </label>
-                      <input
-                        id="inlineGradYear"
-                        name="inlineGradYear"
-                        type="text"
-                        value={profile.graduationYear}
-                        onChange={(event) => updateProfile("graduationYear", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-amber-900" htmlFor="inlineSex">
-                        Sex / Gender
-                      </label>
-                      <select
-                        id="inlineSex"
-                        name="inlineSex"
-                        value={profile.sex}
-                        onChange={(event) => updateProfile("sex", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        required
-                      >
-                        <option value="">Select one</option>
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                        <option value="Non-binary">Non-binary</option>
-                      </select>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-medium text-amber-900" htmlFor="inlinePhone">
-                        Phone
-                      </label>
-                      <input
-                        id="inlinePhone"
-                        name="inlinePhone"
-                        type="tel"
-                        value={profile.phone}
-                        onChange={(event) => updateProfile("phone", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        required
-                      />
-                    </div>
-                  </div>
-                  {profileError ? (
-                    <p className="text-xs text-red-700" role="alert">
-                      {profileError}
-                    </p>
-                  ) : null}
-                  {profileSuccess ? (
-                    <p className="text-xs text-emerald-700" role="status">
-                      {profileSuccess}
-                    </p>
-                  ) : null}
-                  <button
-                    type="submit"
-                    className="w-full rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={profileSaving}
-                  >
-                    {profileSaving ? "Saving profile..." : "Save profile"}
-                  </button>
-                </form>
-              </div>
-            ) : null}
-            {profileSaved && profileNotice ? (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                {profileNotice}
-              </div>
-            ) : null}
+              )}
+            </div>
 
-            <form className="space-y-6" onSubmit={handleSubmit}>
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-slate-900">Trip details</p>
-              </div>
-              {editingTripId ? null : (
-                <div className="grid gap-3 sm:grid-cols-2">
+            {loading ? null : (
+              <div className="mt-8 space-y-6">
+                {!profileSaved ? (
+                  <div className="space-y-4 rounded-[1.8rem] border border-amber-200 bg-[#fff7ec] px-5 py-5 text-sm text-amber-900">
+                    <p className="font-semibold text-amber-950">Create the profile riders will see</p>
+                    <p className="leading-6">
+                      We need this so the matching algorithm can run and so your future ride
+                      partner feels comfortable meeting you.
+                    </p>
+                    <form className="space-y-3" onSubmit={handleProfileSave}>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="block text-xs font-medium text-amber-900" htmlFor="inlineName">
+                            Name
+                          </label>
+                          <input
+                            id="inlineName"
+                            name="inlineName"
+                            type="text"
+                            value={profile.name}
+                            onChange={(event) => updateProfile("name", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-amber-900" htmlFor="inlineMajor">
+                            Major
+                          </label>
+                          <input
+                            id="inlineMajor"
+                            name="inlineMajor"
+                            type="text"
+                            value={profile.major}
+                            onChange={(event) => updateProfile("major", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-amber-900" htmlFor="inlineGradYear">
+                            Graduation year
+                          </label>
+                          <input
+                            id="inlineGradYear"
+                            name="inlineGradYear"
+                            type="text"
+                            value={profile.graduationYear}
+                            onChange={(event) => updateProfile("graduationYear", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-amber-900" htmlFor="inlineSex">
+                            Sex / Gender
+                          </label>
+                          <select
+                            id="inlineSex"
+                            name="inlineSex"
+                            value={profile.sex}
+                            onChange={(event) => updateProfile("sex", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          >
+                            <option value="">Select one</option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Non-binary">Non-binary</option>
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-amber-900" htmlFor="inlinePhone">
+                            Phone
+                          </label>
+                          <input
+                            id="inlinePhone"
+                            name="inlinePhone"
+                            type="tel"
+                            value={profile.phone}
+                            onChange={(event) => updateProfile("phone", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          />
+                        </div>
+                      </div>
+                      {profileError ? (
+                        <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700" role="alert">
+                          {profileError}
+                        </p>
+                      ) : null}
+                      {profileSuccess ? (
+                        <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700" role="status">
+                          {profileSuccess}
+                        </p>
+                      ) : null}
+                      <button
+                        type="submit"
+                        className="primary-cta w-full disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={profileSaving}
+                      >
+                        {profileSaving ? "Saving profile..." : "Save profile for matching"}
+                      </button>
+                    </form>
+                  </div>
+                ) : null}
+
+                {profileSaved && profileNotice ? (
+                  <div className="rounded-[1.6rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                    {profileNotice}
+                  </div>
+                ) : null}
+
+                <form className="space-y-6" onSubmit={handleSubmit}>
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Trip details
+                    </p>
+                    <p className="text-sm leading-6 text-slate-600">
+                      Share your window so we can find a ride partner whose timing actually fits.
+                    </p>
+                  </div>
+                  {editingTripId ? null : (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        className={`rounded-full border px-4 py-3 text-sm font-semibold transition ${
+                          isDeparture
+                            ? "border-slate-900 bg-slate-900 text-white shadow-lg shadow-slate-900/10"
+                            : "border-slate-300 bg-white/80 text-slate-900 hover:bg-white"
+                        }`}
+                        onClick={() => updateForm("direction", "Departing Pittsburgh")}
+                      >
+                        Departing Pittsburgh
+                      </button>
+                      <button
+                        type="button"
+                        className={`rounded-full border px-4 py-3 text-sm font-semibold transition ${
+                          isArrival
+                            ? "border-slate-900 bg-slate-900 text-white shadow-lg shadow-slate-900/10"
+                            : "border-slate-300 bg-white/80 text-slate-900 hover:bg-white"
+                        }`}
+                        onClick={() => updateForm("direction", "Arriving to Pittsburgh")}
+                      >
+                        Arriving in Pittsburgh
+                      </button>
+                    </div>
+                  )}
+                  {form.direction ? (
+                    <>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700" htmlFor="flightDate">
+                            {dateLabel}
+                          </label>
+                          <input
+                            id="flightDate"
+                            name="flightDate"
+                            type="date"
+                            value={form.flightDate}
+                            onChange={(event) => updateForm("flightDate", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700" htmlFor="flightTime">
+                            {timeLabel}
+                          </label>
+                          <input
+                            id="flightTime"
+                            name="flightTime"
+                            type="time"
+                            value={form.flightTime}
+                            onChange={(event) => updateForm("flightTime", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      {isArrival ? (
+                        <div>
+                          <label
+                            className="block text-sm font-medium text-slate-700"
+                            htmlFor="willingToWaitUntil"
+                          >
+                            Willing to wait until
+                          </label>
+                          <input
+                            id="willingToWaitUntil"
+                            name="willingToWaitUntil"
+                            type="time"
+                            value={form.willingToWaitUntil}
+                            onChange={(event) => updateForm("willingToWaitUntil", event.target.value)}
+                            className={FORM_INPUT_CLASS}
+                            required
+                          />
+                        </div>
+                      ) : null}
+
+                      {isDeparture ? (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div>
+                            <label
+                              className="block text-sm font-medium text-slate-700"
+                              htmlFor="minHoursBefore"
+                            >
+                              Minimum hours before flight
+                            </label>
+                            <input
+                              id="minHoursBefore"
+                              name="minHoursBefore"
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={form.minHoursBefore}
+                              onChange={(event) => updateForm("minHoursBefore", event.target.value)}
+                              className={FORM_INPUT_CLASS}
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label
+                              className="block text-sm font-medium text-slate-700"
+                              htmlFor="maxHoursBefore"
+                            >
+                              Maximum hours before flight
+                            </label>
+                            <input
+                              id="maxHoursBefore"
+                              name="maxHoursBefore"
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={form.maxHoursBefore}
+                              onChange={(event) => updateForm("maxHoursBefore", event.target.value)}
+                              className={FORM_INPUT_CLASS}
+                              required
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div>
+                        <label
+                          className="block text-sm font-medium text-slate-700"
+                          htmlFor="allowedPartnerSex"
+                        >
+                          Strict carpool eligibility
+                        </label>
+                        <select
+                          id="allowedPartnerSex"
+                          name="allowedPartnerSex"
+                          value={form.allowedPartnerSex}
+                          onChange={(event) => updateForm("allowedPartnerSex", event.target.value)}
+                          className={FORM_INPUT_CLASS}
+                          required
+                        >
+                          {allowedPartnerOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-2 text-xs text-slate-500">
+                          This is a strict safety and comfort filter. Matches outside this
+                          selection will be excluded.
+                        </p>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {error ? (
+                    <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                      {error}
+                    </p>
+                  ) : null}
+                  {success ? (
+                    <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700" role="status">
+                      {success}
+                    </p>
+                  ) : null}
+
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <button
+                      type="submit"
+                      className="primary-cta w-full disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={saving || !hasCompleteProfile}
+                    >
+                      {saving
+                        ? editingTripId
+                          ? "Updating..."
+                          : "Saving..."
+                        : editingTripId
+                          ? "Update trip"
+                          : "Save trip and start matching"}
+                    </button>
+                    {editingTripId ? (
+                      <button
+                        type="button"
+                        className="secondary-cta w-full"
+                        onClick={cancelEdit}
+                        disabled={saving}
+                      >
+                        Cancel edit
+                      </button>
+                    ) : null}
+                  </div>
+                </form>
+
+                <div className="border-t border-slate-200/70 pt-4">
                   <button
                     type="button"
-                    className={`rounded-md border px-4 py-2 text-sm font-semibold ${
-                      isDeparture
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-300 text-slate-900 hover:bg-slate-50"
-                    }`}
-                    onClick={() => updateForm("direction", "Departing Pittsburgh")}
+                    className="secondary-cta w-full"
+                    onClick={() => router.push("/trips")}
                   >
-                    Departing Pittsburgh
-                  </button>
-                  <button
-                    type="button"
-                    className={`rounded-md border px-4 py-2 text-sm font-semibold ${
-                      isArrival
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-300 text-slate-900 hover:bg-slate-50"
-                    }`}
-                    onClick={() => updateForm("direction", "Arriving to Pittsburgh")}
-                  >
-                    Arriving in Pittsburgh
+                    View my trips
                   </button>
                 </div>
-              )}
-              {form.direction ? (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700" htmlFor="flightDate">
-                        {dateLabel}
-                      </label>
-                      <input
-                        id="flightDate"
-                        name="flightDate"
-                        type="date"
-                        value={form.flightDate}
-                        onChange={(event) => updateForm("flightDate", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700" htmlFor="flightTime">
-                        {timeLabel}
-                      </label>
-                      <input
-                        id="flightTime"
-                        name="flightTime"
-                        type="time"
-                        value={form.flightTime}
-                        onChange={(event) => updateForm("flightTime", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  {isArrival ? (
-                    <div>
-                      <label
-                        className="block text-sm font-medium text-slate-700"
-                        htmlFor="willingToWaitUntil"
-                      >
-                        Willing to wait until
-                      </label>
-                      <input
-                        id="willingToWaitUntil"
-                        name="willingToWaitUntil"
-                        type="time"
-                        value={form.willingToWaitUntil}
-                        onChange={(event) => updateForm("willingToWaitUntil", event.target.value)}
-                        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-                        required
-                      />
-                    </div>
-                  ) : null}
-
-                  {isDeparture ? (
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div>
-                        <label
-                          className="block text-sm font-medium text-slate-700"
-                          htmlFor="minHoursBefore"
-                        >
-                          Minimum hours before flight
-                        </label>
-                        <input
-                          id="minHoursBefore"
-                          name="minHoursBefore"
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={form.minHoursBefore}
-                          onChange={(event) => updateForm("minHoursBefore", event.target.value)}
-                          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label
-                          className="block text-sm font-medium text-slate-700"
-                          htmlFor="maxHoursBefore"
-                        >
-                          Maximum hours before flight
-                        </label>
-                        <input
-                          id="maxHoursBefore"
-                          name="maxHoursBefore"
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={form.maxHoursBefore}
-                          onChange={(event) => updateForm("maxHoursBefore", event.target.value)}
-                          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-                          required
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div>
-                    <label
-                      className="block text-sm font-medium text-slate-700"
-                      htmlFor="allowedPartnerSex"
-                    >
-                      Strict carpool eligibility (allowed partner sex)
-                    </label>
-                    <select
-                      id="allowedPartnerSex"
-                      name="allowedPartnerSex"
-                      value={form.allowedPartnerSex}
-                      onChange={(event) => updateForm("allowedPartnerSex", event.target.value)}
-                      className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900"
-                      required
-                    >
-                      {allowedPartnerOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-2 text-xs text-slate-500">
-                      This is a strict filter. Matches outside this selection will be excluded.
-                    </p>
-                  </div>
-                </>
-              ) : null}
-
-              {error ? (
-                <p className="text-sm text-red-600" role="alert">
-                  {error}
-                </p>
-              ) : null}
-              {success ? (
-                <p className="text-sm text-green-600" role="status">
-                  {success}
-                </p>
-              ) : null}
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="submit"
-                  className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={saving || !hasCompleteProfile}
-                >
-                  {saving
-                    ? editingTripId
-                      ? "Updating..."
-                      : "Saving..."
-                    : editingTripId
-                      ? "Update trip"
-                      : "Save trip"}
-                </button>
-                {editingTripId ? (
-                  <button
-                    type="button"
-                    className="w-full rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
-                    onClick={cancelEdit}
-                    disabled={saving}
-                  >
-                    Cancel edit
-                  </button>
-                ) : null}
               </div>
-            </form>
+            )}
+          </section>
 
-            <div className="border-t border-slate-200 pt-4">
-              <button
-                type="button"
-                className="w-full rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
-                onClick={() => router.push("/trips")}
-              >
-                View my trips
-              </button>
-            </div>
-          </div>
-        )}
+          <aside className="space-y-6">
+            <section className="glass-panel rounded-[2rem] p-6 md:p-8">
+              <span className="section-chip">How we help</span>
+              <h2 className="mt-4 text-3xl font-semibold text-slate-900">
+                We match on timing, trust, and comfort.
+              </h2>
+              <p className="mt-4 text-base leading-7 text-slate-700">
+                This planner compares your ride window, your hard comfort filters, and your
+                verified rider profile so you see matches that make sense in real life.
+              </p>
+            </section>
+
+            <section className="glass-panel rounded-[2rem] p-6 md:p-8">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Why we ask for this information
+              </p>
+              <div className="mt-5 space-y-4">
+                <div className="soft-card">
+                  <p className="text-sm font-semibold text-slate-900">Verified email</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Security starts with knowing each rider belongs to the CMU community.
+                  </p>
+                </div>
+                <div className="soft-card">
+                  <p className="text-sm font-semibold text-slate-900">Profile details</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Your profile powers the matching algorithm and helps other riders feel more
+                    comfortable before meeting.
+                  </p>
+                </div>
+                <div className="soft-card">
+                  <p className="text-sm font-semibold text-slate-900">Trip window</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Flight time and wait tolerance help us avoid weak matches that would fall apart
+                    at pickup.
+                  </p>
+                </div>
+              </div>
+            </section>
+          </aside>
+        </div>
       </div>
     </main>
   );
@@ -847,8 +909,10 @@ export default function PlanTripPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-white px-6 py-12">
-          <p className="text-sm text-slate-600">Loading trip planner...</p>
+        <main className="page-shell">
+          <div className="page-content flex min-h-screen items-center justify-center">
+            <p className="text-sm text-slate-600">Loading trip planner...</p>
+          </div>
         </main>
       }
     >
