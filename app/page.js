@@ -8,51 +8,63 @@ import { supabase } from "../lib/supabaseClient";
 const CMU_EMAIL_REGEX = /@([a-z0-9-]+\.)*cmu\.edu$/i;
 const ALLOW_ANY_EMAIL = process.env.NEXT_PUBLIC_ALLOW_ANY_EMAIL === "true";
 
-const HERO_POINTS = [
+const HERO_PILLS = [
+  "Campus-only rider pool",
+  "Security-first verification",
+  "Profile-backed matching",
+  "Comfort-aware ride filters"
+];
+
+const PROOF_STRIP = [
   {
-    title: "Trusted campus-only access",
-    description: "Every rider verifies a CMU email before entering the network, which makes shared rides feel much safer."
+    label: "Campus-only",
+    text: "Verified CMU riders only"
   },
   {
-    title: "Split the airport fare",
-    description: "Instead of eating the whole ride cost between PIT and campus, match with another student headed the same way."
+    label: "Safer meetups",
+    text: "Know who you are meeting"
   },
   {
-    title: "Meet with context",
-    description: "Profiles and matching details help both riders know who they are coordinating with before pickup."
+    label: "Better matches",
+    text: "Profiles help rank the best fit"
+  },
+  {
+    label: "Less wasted fare",
+    text: "Split the airport ride"
   }
 ];
 
-const STORY_CARDS = [
+const REASONS = [
   {
-    title: "Why it feels better than a random split",
-    body: "TartanTrips keeps the network inside a verified CMU community, so the person sharing your ride is not just another stranger from the internet."
+    title: "Why we verify email",
+    body: "For security and safe rides. Every account starts with a confirmed CMU identity before it can join the ride pool."
   },
   {
     title: "Why we ask for a profile",
-    body: "Your profile helps our matching algorithm rank stronger partners and gives both riders more confidence before meeting in person."
+    body: "So our matching algorithm can find the best partner and so both riders feel more comfortable about who they are meeting."
+  },
+  {
+    title: "Why it actually helps",
+    body: "You stop paying the whole fare alone, stop coordinating with zero context, and get a ride flow that feels more thought through."
   }
 ];
 
 const HOW_IT_WORKS = [
   {
-    label: "Verify your CMU email",
-    body: "We do this for security and safe rides. It keeps the ride pool tied to real campus identities."
+    step: "01",
+    title: "Explore first",
+    body: "The front page explains the value before any login prompt, so the product feels like a real consumer website instead of a gated tool."
   },
   {
-    label: "Create your rider profile",
-    body: "This is how our matching algorithm finds the best partner and how future riders get comfortable meeting you."
+    step: "02",
+    title: "Verify your CMU email",
+    body: "We use email verification for account security and to keep ride sharing inside a trusted campus network."
   },
   {
-    label: "Share your trip window",
-    body: "We compare timing, wait tolerance, and comfort filters so you get matches that are practical, not random."
+    step: "03",
+    title: "Create your profile and trip",
+    body: "Your profile and trip details give the matching flow enough context to find riders who fit your timing and comfort preferences."
   }
-];
-
-const BENEFIT_STRIP = [
-  "Too expensive to Uber between PIT and CMU?",
-  "Ride with a trusted campusmate.",
-  "Split the cost without guessing who you are meeting."
 ];
 
 export default function LandingPage() {
@@ -120,15 +132,15 @@ export default function LandingPage() {
   return (
     <main className="page-shell">
       {loginOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 px-4 py-6 backdrop-blur-sm">
-          <div className="glass-panel w-full max-w-lg rounded-[2.2rem] p-6 md:p-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 px-4 py-6 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-xl rounded-[2.35rem] p-6 md:p-8">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Sign in when you&apos;re ready
+                  Sign in when you are ready
                 </p>
                 <h2 className="mt-3 text-3xl font-semibold text-slate-900">
-                  Explore first. Log in only when you want to match.
+                  Explore the site first. Log in only when you want to match.
                 </h2>
               </div>
               <button
@@ -142,7 +154,8 @@ export default function LandingPage() {
 
             <p className="mt-4 text-base leading-7 text-slate-700">
               Use your CMU email to unlock verified matching. We verify email for security and safe
-              rides, and we use your profile later so the algorithm can find the best ride partner.
+              rides, and we use your profile so the matching algorithm can find the best ride
+              partner and make airport pickup feel more comfortable.
             </p>
 
             <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
@@ -187,13 +200,13 @@ export default function LandingPage() {
               <div className="soft-card">
                 <p className="text-sm font-semibold text-slate-900">Why email verification matters</p>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  It keeps ride matching inside a real CMU community and makes airport meetups feel safer.
+                  It keeps ride sharing inside the real CMU community and makes first meetups feel safer.
                 </p>
               </div>
               <div className="soft-card">
                 <p className="text-sm font-semibold text-slate-900">Why profiles matter</p>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Profiles help our matching algorithm rank better partners and help riders trust who they are meeting.
+                  Profiles help our matching algorithm rank better partners and help both riders trust who they are meeting.
                 </p>
               </div>
             </div>
@@ -201,10 +214,16 @@ export default function LandingPage() {
         </div>
       ) : null}
 
-      <div className="page-content space-y-8">
-        <section className="flex flex-col gap-5 lg:min-h-[calc(100vh-4rem)]">
-          <div className="glass-panel rounded-[2rem] p-5 md:p-6">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="page-content space-y-8 lg:space-y-10">
+        <section className="glass-panel relative overflow-hidden rounded-[2.8rem]">
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute -left-14 top-20 h-44 w-44 rounded-full bg-[#efc6ad]/45 blur-3xl" />
+            <div className="absolute right-8 top-10 h-48 w-48 rounded-full bg-[#bfe0dc]/45 blur-3xl" />
+            <div className="absolute bottom-0 left-1/3 h-56 w-56 rounded-full bg-white/35 blur-3xl" />
+          </div>
+
+          <div className="relative z-10 p-5 md:p-6 lg:p-8 xl:p-9">
+            <div className="flex flex-col gap-4 border-b border-white/60 pb-5 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-semibold text-slate-900">TartanTrips</p>
                 <p className="text-sm text-slate-600">
@@ -226,20 +245,17 @@ export default function LandingPage() {
                 )}
               </div>
             </div>
-          </div>
 
-          <section className="glass-panel overflow-hidden rounded-[2.4rem] p-6 md:p-8 lg:flex-1 lg:p-8 xl:p-9">
-            <div className="grid gap-6 xl:grid-cols-[0.96fr_1.04fr] xl:items-center">
-              <div className="flex flex-col justify-center space-y-5 lg:py-4">
-                <span className="section-chip">Shared rides between PIT and CMU</span>
+            <div className="mt-6 grid gap-8 xl:grid-cols-[0.94fr_1.06fr] xl:items-center">
+              <div className="space-y-6">
+                <span className="section-chip">Built for PIT to CMU rides</span>
                 <div className="space-y-4">
-                  <h1 className="text-[clamp(2.7rem,4.7vw,4.9rem)] font-semibold leading-[0.92] tracking-[-0.055em] text-slate-900">
-                    Too expensive to Uber between PIT and CMU?
+                  <h1 className="text-[clamp(3rem,5.2vw,5.6rem)] font-semibold leading-[0.9] tracking-[-0.06em] text-slate-900">
+                    The airport ride that should not cost you the whole fare.
                   </h1>
-                  <p className="max-w-2xl text-lg leading-8 text-slate-700 xl:text-[1.18rem]">
-                    Ride with a trusted campusmate, split the cost, and feel better about who you
-                    are meeting. TartanTrips matches verified CMU students using timing, profile
-                    fit, and comfort filters built for real airport pickups.
+                  <p className="max-w-2xl text-lg leading-8 text-slate-700 xl:text-[1.2rem]">
+                    Too expensive to Uber between PIT and CMU? Ride with a trusted campusmate,
+                    split the cost, and feel better about who you are meeting before pickup.
                   </p>
                 </div>
 
@@ -258,18 +274,24 @@ export default function LandingPage() {
                   </Link>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {HERO_POINTS.map((point) => (
-                    <div key={point.title} className="rounded-[1.35rem] border border-white/80 bg-white/65 px-4 py-3">
-                      <p className="text-sm font-semibold text-slate-900">{point.title}</p>
-                      <p className="mt-1 text-xs leading-5 text-slate-600">{point.description}</p>
-                    </div>
+                <p className="text-sm leading-6 text-slate-500">
+                  No password. Verified CMU email. Profile-backed matching. Better first meetups.
+                </p>
+
+                <div className="flex flex-wrap gap-2.5">
+                  {HERO_PILLS.map((pill) => (
+                    <span
+                      key={pill}
+                      className="rounded-full border border-white/80 bg-white/68 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600"
+                    >
+                      {pill}
+                    </span>
                   ))}
                 </div>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-[1.1fr_0.9fr] lg:h-full">
-                <div className="relative min-h-[280px] overflow-hidden rounded-[2rem] border border-white/80 bg-white/75 shadow-2xl shadow-slate-900/10 md:row-span-2 lg:min-h-[420px] xl:min-h-0">
+              <div className="grid gap-4 lg:grid-cols-[1.12fr_0.88fr]">
+                <div className="relative min-h-[360px] overflow-hidden rounded-[2.2rem] border border-white/80 bg-white/75 shadow-2xl shadow-slate-900/10 lg:row-span-2">
                   <Image
                     src="/landing/hero-ride-scene.svg"
                     alt="Students coordinating a shared ride from the airport to campus."
@@ -278,18 +300,45 @@ export default function LandingPage() {
                     className="h-full w-full object-cover"
                     priority
                   />
-                  <div className="absolute inset-x-4 bottom-4 rounded-[1.25rem] bg-white/88 px-4 py-3 shadow-lg shadow-slate-900/10 backdrop-blur">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Built for the actual problem
+
+                  <div className="absolute left-4 top-4 rounded-[1.2rem] bg-slate-900 px-4 py-3 text-white shadow-xl shadow-slate-900/20">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
+                      Solo airport ride
                     </p>
-                    <p className="mt-1 text-sm leading-6 text-slate-700">
-                      Expensive solo rides, late arrivals, early departures, and not knowing who
-                      you are meeting.
+                    <p className="mt-1 text-lg font-semibold">You pay the whole fare.</p>
+                  </div>
+
+                  <div className="absolute bottom-4 left-4 right-4 rounded-[1.35rem] bg-white/90 px-4 py-4 shadow-lg shadow-slate-900/10 backdrop-blur">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      With TartanTrips
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-slate-900">
+                      Split the ride with a verified campusmate and stop guessing who you are meeting.
                     </p>
                   </div>
                 </div>
 
-                <div className="hidden overflow-hidden rounded-[1.8rem] border border-white/80 bg-white/75 shadow-xl shadow-slate-900/10 md:block">
+                <div className="rounded-[1.8rem] bg-slate-900 px-5 py-5 text-white shadow-2xl shadow-slate-900/15">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">
+                    Why it feels better
+                  </p>
+                  <div className="mt-4 space-y-4">
+                    <div className="rounded-[1.3rem] border border-white/10 bg-white/5 px-4 py-3">
+                      <p className="text-sm font-semibold">Verified email first</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-200">
+                        We do this for security and safe rides.
+                      </p>
+                    </div>
+                    <div className="rounded-[1.3rem] border border-white/10 bg-white/5 px-4 py-3">
+                      <p className="text-sm font-semibold">Profile-powered matching</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-200">
+                        So our algorithm can find the best partner and both riders can feel more comfortable.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="overflow-hidden rounded-[1.8rem] border border-white/80 bg-white/75 shadow-xl shadow-slate-900/10">
                   <Image
                     src="/landing/trust-check-scene.svg"
                     alt="Verified rider profile and trust check illustration."
@@ -298,114 +347,116 @@ export default function LandingPage() {
                     className="h-full w-full object-cover"
                   />
                 </div>
-
-                <div className="hidden overflow-hidden rounded-[1.8rem] border border-white/80 bg-white/75 shadow-xl shadow-slate-900/10 md:block">
-                  <Image
-                    src="/landing/split-fare-scene.svg"
-                    alt="Shared fare and ride split illustration."
-                    width={760}
-                    height={620}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
               </div>
             </div>
-          </section>
+          </div>
         </section>
 
-        <section className="glass-panel rounded-[2rem] px-6 py-5 md:px-8">
-          <div className="flex flex-col gap-3 text-center md:flex-row md:flex-wrap md:items-center md:justify-center md:gap-6">
-            {BENEFIT_STRIP.map((item, index) => (
-              <div key={item} className="flex items-center justify-center gap-3">
-                {index > 0 ? <span className="hidden h-2 w-2 rounded-full bg-[#d17849] md:inline-flex" /> : null}
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  {item}
+        <section className="rounded-[2rem] bg-slate-900 px-6 py-5 text-white shadow-2xl shadow-slate-900/10 md:px-8">
+          <div className="grid gap-4 md:grid-cols-4">
+            {PROOF_STRIP.map((item) => (
+              <div key={item.label} className="rounded-[1.4rem] border border-white/10 bg-white/5 px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">
+                  {item.label}
                 </p>
+                <p className="mt-2 text-sm leading-6 text-white">{item.text}</p>
               </div>
             ))}
           </div>
         </section>
 
-        <div className="grid gap-6 lg:grid-cols-[0.94fr_1.06fr] lg:items-start">
-          <aside className="space-y-6">
-            {STORY_CARDS.map((card) => (
-              <section key={card.title} className="glass-panel rounded-[2rem] p-6 md:p-8">
-                <span className="section-chip">Why students use it</span>
-                <h2 className="mt-4 text-3xl font-semibold text-slate-900">{card.title}</h2>
-                <p className="mt-4 text-base leading-7 text-slate-700">{card.body}</p>
-              </section>
-            ))}
-          </aside>
+        <section className="grid gap-6 lg:grid-cols-[0.94fr_1.06fr]">
+          <div className="glass-panel rounded-[2.2rem] p-6 md:p-8">
+            <span className="section-chip">Why students use it</span>
+            <h2 className="mt-4 text-4xl font-semibold text-slate-900">
+              Feels safer. Feels more worth it. Feels designed for the actual trip.
+            </h2>
+            <p className="mt-4 text-base leading-7 text-slate-700">
+              This is not just a cheaper ride split. It is a more comfortable way to coordinate an
+              airport pickup with someone who belongs to the same campus community.
+            </p>
 
-          <section id="how-it-works" className="glass-panel rounded-[2.2rem] p-6 md:p-8 lg:p-10">
+            <div className="mt-6 space-y-4">
+              {REASONS.map((reason) => (
+                <div key={reason.title} className="soft-card">
+                  <p className="text-sm font-semibold text-slate-900">{reason.title}</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{reason.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <section id="how-it-works" className="glass-panel rounded-[2.2rem] p-6 md:p-8">
             <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
               <div>
                 <span className="section-chip">How it works</span>
                 <h2 className="mt-4 text-4xl font-semibold text-slate-900">
-                  A safer ride flow from inbox to pickup.
+                  A cleaner flow from landing page to airport pickup.
                 </h2>
               </div>
               <p className="max-w-md text-sm leading-6 text-slate-600">
-                The whole product is designed to reduce cost without making the ride feel sketchy.
+                You should understand the product before you log in, and you should trust the ride before you book it.
               </p>
             </div>
 
             <div className="mt-8 grid gap-4 md:grid-cols-3">
-              {HOW_IT_WORKS.map((step, index) => (
-                <div key={step.label} className="soft-card min-h-[220px]">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#c56b3a]">
-                    Step {index + 1}
+              {HOW_IT_WORKS.map((step) => (
+                <div key={step.step} className="soft-card min-h-[240px]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c56b3a]">
+                    Step {step.step}
                   </p>
-                  <h3 className="mt-3 text-2xl font-semibold text-slate-900">{step.label}</h3>
+                  <h3 className="mt-3 text-2xl font-semibold text-slate-900">{step.title}</h3>
                   <p className="mt-3 text-sm leading-6 text-slate-600">{step.body}</p>
                 </div>
               ))}
             </div>
-
-            <div className="mt-8 rounded-[2rem] bg-slate-900 px-6 py-6 text-slate-100 shadow-2xl shadow-slate-900/10 md:px-8">
-              <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr] md:items-center">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-300">
-                    Ready to stop paying for the whole ride alone?
-                  </p>
-                  <p className="mt-3 text-lg leading-8 text-slate-100">
-                    Start with your CMU email, create the profile riders will trust, and let the
-                    matching flow find the best partner for your next airport trip.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-3">
-                  {isAuthenticated ? (
-                    <>
-                      <Link className="primary-cta border border-white/10" href="/home">
-                        {checkingSession ? "Checking session..." : "Open my dashboard"}
-                      </Link>
-                      <Link className="secondary-cta border-white/20 bg-white/10 text-white hover:bg-white/16" href="/profile">
-                        Update my rider profile
-                      </Link>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="primary-cta border border-white/10"
-                        onClick={openLoginPrompt}
-                      >
-                        {checkingSession ? "Checking session..." : "Open sign-in prompt"}
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-cta border-white/20 bg-white/10 text-white hover:bg-white/16"
-                        onClick={openLoginPrompt}
-                      >
-                        Log in after exploring
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
           </section>
-        </div>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-[1.06fr_0.94fr]">
+          <div className="overflow-hidden rounded-[2.2rem] border border-white/70 bg-white/70 shadow-2xl shadow-slate-900/10">
+            <Image
+              src="/landing/split-fare-scene.svg"
+              alt="Shared fare and ride split illustration."
+              width={760}
+              height={620}
+              className="h-full w-full object-cover"
+            />
+          </div>
+
+          <div className="glass-panel rounded-[2.2rem] p-6 md:p-8">
+            <span className="section-chip">Ready when you are</span>
+            <h2 className="mt-4 text-4xl font-semibold text-slate-900">
+              Stop paying the whole airport ride alone.
+            </h2>
+            <p className="mt-4 text-base leading-7 text-slate-700">
+              Start with your CMU email, build the rider profile people will trust, and let the
+              matching flow do the hard part.
+            </p>
+
+            <div className="mt-6 flex flex-col gap-3">
+              {isAuthenticated ? (
+                <>
+                  <Link className="primary-cta w-full" href="/home">
+                    {checkingSession ? "Checking session..." : "Open my dashboard"}
+                  </Link>
+                  <Link className="secondary-cta w-full" href="/profile">
+                    Update my rider profile
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="primary-cta w-full" onClick={openLoginPrompt}>
+                    {checkingSession ? "Checking session..." : "Open sign-in prompt"}
+                  </button>
+                  <button type="button" className="secondary-cta w-full" onClick={openLoginPrompt}>
+                    Log in after exploring
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
       </div>
     </main>
   );
