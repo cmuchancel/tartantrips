@@ -1,0 +1,438 @@
+TARTANTRIPS BACKEND TRANSACTION + WRITE CENTRALIZATION + NOTIFICATION DURABILITY + DATA MODEL NORMALIZATION CAMPAIGN
+
+You are working inside:
+/Users/chancelavoie/Desktop/tartantrips-Xcode
+
+This is a focused follow-up backend campaign. The previous hardening pass already extracted and tested the existing backend route logic. Do not redo that work. Build on it.
+
+Current backend baseline:
+- Match request logic has already been refactored into shared backend services under `lib/backend/`.
+- There is already a large backend test suite in `tests/backend/`.
+- `npm run test`, `npm run lint`, and `npm run build` have already been made green.
+
+The four remaining structural weaknesses to eliminate are:
+
+1. Multi-trip match state transitions are still implemented in application code instead of a real database transaction.
+2. Important trip writes still bypass the hardened backend and go directly from the clients to Supabase.
+3. Match notifications are still operationally weak because the trigger is fire-and-forget from the clients with no durable retry path.
+4. The current slot-based match schema (`match_email_*` and `match_status_*`) is structural debt and should be replaced by a normalized relational model.
+
+Your mission:
+- Move the dangerous state transitions to a transaction-based database boundary.
+- Make all important trip writes go through backend routes, not direct client-side writes to the `trips` table.
+- Make notification triggering durable so a saved trip does not silently lose notification work when the immediate trigger fails.
+- Replace the slot-column match model with a clean relational schema that preserves approvals, pools, and current user-facing behavior.
+- Keep the app working for both web and iOS.
+
+Non-negotiable outcome:
+- The app should no longer depend on web or iOS clients to enforce core trip-write business rules.
+- The match transition path should no longer rely on JavaScript rollback as the primary integrity mechanism.
+- Notification delivery attempts should no longer depend on a single best-effort client trigger with no persistent recovery path.
+- Core ride-share relationships should be modeled as rows and foreign keys, not duplicated across six parallel columns.
+
+Do not ask the user for approval or clarification.
+Make the safest reasonable assumptions and continue.
+
+================================
+PRIMARY OBJECTIVES
+================================
+
+Objective A. Centralize trip writes behind backend routes
+
+The following writes currently still bypass the hardened backend:
+- Web trip create/update in `app/plan/page.tsx`
+- Web trip delete in `app/trips/page.tsx`
+- Some web trip status updates in `app/trips/page.tsx`
+- iOS trip save/delete in `ios/TartanTrips/Services/TartanTripsService.swift`
+
+You must replace those direct writes with backend route calls.
+
+Target state:
+- Web clients call Next.js API routes for create/update/delete/status operations.
+- iOS client calls the same backend API surface where appropriate.
+- Business rules are enforced on the server, not trusted to the client.
+
+Objective B. Move match transitions to a DB transaction or RPC
+
+The following match actions are still orchestrated in JavaScript:
+- request
+- withdraw
+- accept
+- deny
+- remove
+
+Those operations can update multiple rows and currently depend on application-level rollback.
+
+You must move them to a database-backed transactional boundary.
+
+Preferred solution:
+- Create a Postgres function or Supabase RPC that performs the full match transition atomically.
+- Route handlers should validate/authenticate, then call the RPC.
+- The RPC should either commit the full transition or fail with no partial write.
+
+Fallback only if absolutely blocked:
+- If a full RPC cannot be fully wired locally, still create:
+  - the SQL migration or SQL file
+  - the backend wrapper code
+  - the route integration point
+  - tests for the wrapper behavior
+  - a clear note on what would be applied in Supabase
+
+Objective C. Make match notification triggering durable
+
+The current notification trigger path is operationally weak:
+- Web triggers notifications from `app/plan/page.tsx` after saving a trip.
+- iOS triggers notifications from `ios/TartanTrips/Services/TartanTripsService.swift`.
+- Those client calls are fire-and-forget.
+- A trip can save successfully while notification triggering fails, gets swallowed, or is skipped.
+- There is no durable retry system today.
+
+You must replace that model with a server-controlled durable workflow.
+
+Preferred solution:
+- Create a persistent notification job/outbox table, or equivalent durable record of pending notification work.
+- Have trip create/update flows enqueue notification work on the server as part of the backend write path.
+- Process pending notification work from a backend worker/cron/retryable route.
+- Mark notification jobs with states such as `pending`, `processing`, `sent`, `failed`, and retry metadata if useful.
+
+Fallback only if a full worker loop cannot be completed locally:
+- Still add the durable persistence model for pending notification work.
+- Add a backend processing path that can be called safely and idempotently.
+- Ensure notification work is no longer dependent on a one-shot client trigger.
+- Document exactly what scheduler/worker mechanism should be attached in deployment.
+
+Objective D. Replace the slot-based match schema with a normalized pool + approval model
+
+You must preserve the product concepts the user explicitly wants to keep:
+- approval
+- pool / rideshare group behavior
+- multi-person pool expansion
+- member removal
+- pending decisions
+
+Preferred normalized model:
+
+1. `trips`
+- remains the source of trip details
+- no longer stores `match_email_*` or `match_status_*` as the primary relationship system
+
+2. `ride_pools`
+- one row per active rideshare group
+- suggested fields:
+  - `id`
+  - `direction`
+  - `flight_date`
+  - `status` such as `active`, `completed`, `cancelled`
+  - `created_by_trip_id`
+  - `created_at`
+  - `updated_at`
+
+3. `ride_pool_members`
+- one row per trip participating in a pool
+- suggested fields:
+  - `id`
+  - `pool_id`
+  - `trip_id`
+  - `membership_status` such as `active`, `removed`
+  - `joined_at`
+  - `left_at`
+- constraints:
+  - foreign key to `ride_pools`
+  - foreign key to `trips`
+  - unique active membership per `(pool_id, trip_id)`
+  - enforce maximum active members per pool through transaction/RPC logic
+
+4. `pool_join_requests`
+- one row per attempt by a trip to join another trip or existing pool
+- this becomes the clean replacement for ad hoc `request_sent` / `request_received` slot coupling
+- suggested fields:
+  - `id`
+  - `requester_trip_id`
+  - `target_trip_id` nullable if request targets a pool directly
+  - `target_pool_id` nullable if request targets a single trip
+  - `status` such as `pending`, `withdrawn`, `accepted`, `denied`, `cancelled`, `completed`
+  - `created_at`
+  - `resolved_at`
+- constraints:
+  - foreign keys to `trips` and `ride_pools`
+  - exactly one of `target_trip_id` or `target_pool_id` should be set
+
+5. `pool_join_approvals`
+- one row per required approver for a candidate joining a pool
+- this is the clean replacement for `partner_approval_needed`
+- suggested fields:
+  - `id`
+  - `join_request_id`
+  - `approver_trip_id`
+  - `decision` such as `pending`, `approved`, `denied`
+  - `decided_at`
+- constraints:
+  - foreign key to `pool_join_requests`
+  - foreign key to `trips`
+  - unique `(join_request_id, approver_trip_id)`
+
+6. `notification_jobs` or `notification_outbox`
+- durable notification work queue
+
+Clean state-model expectations:
+- A two-person confirmed match becomes a `ride_pool` with two `ride_pool_members`.
+- A request from one unmatched trip to another unmatched trip creates a `pool_join_request`.
+- When accepted and no pool exists yet, create a new `ride_pool` and add both trips as members.
+- When a trip requests to join an existing pool, create one `pool_join_request` and one `pool_join_approvals` row per active current member.
+- When all approvals are `approved`, add the candidate to `ride_pool_members` and complete the request.
+- If any approval is `denied`, mark the join request denied and do not add the candidate to the pool.
+- Removing a member should update pool membership rows, not mutate six slot columns.
+
+Strong preference:
+- Migrate the application to this normalized schema as the new source of truth.
+- If backward compatibility is temporarily required, provide a compatibility layer and migration plan, but do not treat the slot columns as the long-term design.
+
+Fallback only if a full migration cannot be completed in one pass:
+- add the new normalized schema and transaction/RPC layer
+- add a compatibility adapter for current client views
+- document a staged migration plan
+- make the new schema the target architecture, not just an optional idea
+
+================================
+REPOSITORY CONTEXT
+================================
+
+Existing hardened backend core:
+- `lib/backend/match-requests-service.js`
+- `lib/backend/trip-status-sync-service.js`
+- `lib/backend/match-notifications-service.js`
+- `lib/backend/service-utils.js`
+- `lib/backend/supabase-repo.js`
+
+Existing route wrappers:
+- `app/api/match-requests/route.js`
+- `app/api/trip-status-sync/route.js`
+- `app/api/match-notifications/route.js`
+
+Current direct-write clients that must be addressed:
+- `app/plan/page.tsx`
+- `app/trips/page.tsx`
+- `ios/TartanTrips/Services/TartanTripsService.swift`
+
+Current notification trigger paths that must be addressed:
+- `app/plan/page.tsx`
+- `ios/TartanTrips/Services/TartanTripsService.swift`
+
+Existing docs you should read and follow:
+- `BACKEND_HARDENING_REPORT.md`
+- `docs/backend-invariants.md`
+- `docs/backend-sql-hardening.sql`
+
+================================
+IMPLEMENTATION REQUIREMENTS
+================================
+
+1. Add backend routes for trip writes
+
+At minimum, add server-backed endpoints for:
+- create trip
+- update trip
+- delete trip
+- update trip status / landed status / meetup status when applicable
+
+Requirements:
+- validate auth
+- validate payload shape
+- validate ownership
+- validate direction/date/time/window semantics
+- preserve current client-visible behavior where possible
+- keep JSON responses consistent and machine-usable
+
+2. Update web client to stop writing directly to `trips`
+
+Required:
+- remove direct `supabase.from("trips").insert(...)` usage from web flows that mutate trips
+- remove direct `supabase.from("trips").update(...)` usage from mutation flows that should be server-controlled
+- remove direct `supabase.from("trips").delete(...)` usage from deletion flows
+- replace with fetch calls to the new backend endpoints
+
+Read paths can remain direct if needed for now. This campaign is about write centralization first.
+
+3. Update iOS client to stop writing directly to `trips`
+
+Required:
+- replace direct `POST /rest/v1/trips`
+- replace direct `PATCH /rest/v1/trips`
+- replace direct `DELETE /rest/v1/trips`
+- use backend endpoints instead
+
+Maintain existing app behavior as closely as possible.
+
+4. Remove fire-and-forget notification triggering from clients
+
+Required:
+- stop relying on web clients to trigger notifications as a best-effort follow-up after save
+- stop relying on iOS clients to trigger notifications with swallowed errors
+- move notification enqueueing into the backend trip-write flow
+- make notification processing retryable and idempotent
+
+Target state:
+- trip save completes through the backend
+- notification work is persisted by the backend
+- a failed first delivery attempt can be retried later
+- duplicate sends are still prevented
+
+5. Create transaction-based match transition boundary
+
+Preferred implementation:
+- add a SQL migration or SQL script that defines an RPC, such as:
+  - `match_transition(action text, trip_id uuid, matched_trip_id uuid, requester_email text)`
+- implement row locking and all-or-nothing updates inside the function
+- surface business-rule failures in a debuggable way
+
+The RPC must preserve current domain rules:
+- reciprocal request/request_received semantics
+- reciprocal matched semantics
+- partner approval flows
+- six-person slot cap
+- relationship clearing on withdraw/deny/remove
+- ownership/authorization expectations enforced before mutation
+
+The preferred implementation is to make the RPC operate on the normalized pool/request/approval tables instead of the old slot columns.
+
+6. Wire backend route to RPC
+
+For match requests:
+- route handler authenticates caller
+- route validates payload
+- route calls repository/RPC layer
+- route returns stable JSON response
+
+Do not leave the old JavaScript multi-row mutation path as the primary production path once the RPC path exists.
+
+7. Add DB hardening where appropriate
+
+At minimum consider:
+- unique constraint on `match_notifications (trip_id, matched_trip_id)`
+- unique or supporting identifiers for notification jobs/outbox rows if you add them
+- any supporting indexes needed for new RPC/query patterns
+- uniqueness and foreign-key constraints for the normalized pool/request/approval tables
+- a staged migration plan away from the six-slot schema if a full cutover cannot be completed immediately
+
+8. Keep and extend tests
+
+You must extend the existing backend suite.
+
+Required test coverage:
+- new trip create/update/delete/status routes
+- web/client contract compatibility for those routes
+- iOS/backend contract compatibility where applicable
+- notification enqueueing on trip create/update
+- notification processing retry behavior
+- notification processing idempotency
+- notification-job dedupe behavior if an outbox/job table is added
+- failure behavior when notification delivery fails on the first attempt
+- match-request route calling the transactional DB boundary
+- normalized schema behavior for:
+  - unmatched-to-unmatched request flow
+  - creation of a two-person pool
+  - join request into an existing pool
+  - one approval pending
+  - all approvals approved
+  - one approval denied
+  - member removal from a pool
+  - pool size cap enforcement
+- failure behavior when the RPC rejects
+- malformed payloads and auth failures
+- ownership failures
+- duplicate trip rules
+- delete cleanup behavior if implemented
+- transaction/RPC wrapper behavior
+
+If live database RPC execution is not available locally:
+- test the route-to-repository boundary with mocks/fakes
+- add SQL artifact tests or snapshot-style verification if useful
+- clearly separate unit coverage from live DB limitations
+
+================================
+ARCHITECTURAL RULES
+================================
+
+Rule 1.
+The client should not be trusted to enforce write-time business rules.
+
+Rule 2.
+The backend should become the write authority for `trips`.
+
+Rule 3.
+The database should become the authority for atomic multi-trip match transitions.
+
+Rule 4.
+Notification work should be durable, retryable, and server-controlled.
+
+Rule 5.
+The long-term source of truth for ride relationships should be normalized relational tables for pools, memberships, join requests, and approvals.
+
+Rule 6.
+Do not casually break the current web or iOS payload contracts.
+
+Rule 7.
+Preserve existing validated behavior unless changing it is necessary to remove a correctness or integrity risk.
+
+================================
+DEFINITION OF DONE
+================================
+
+This campaign is complete only when all of the following are true:
+
+- Trip create/update/delete/status writes are routed through backend endpoints instead of direct client writes.
+- Web mutation flows no longer directly mutate the `trips` table from the client.
+- iOS mutation flows no longer directly mutate the `trips` table from the client.
+- Notification triggering is no longer dependent on fire-and-forget client calls.
+- Notification work is persisted durably and can be retried after transient failure.
+- Match transition logic is backed by a real DB transaction or RPC, or the repo contains the concrete RPC implementation plus backend wiring if local live execution is blocked.
+- The repo contains a normalized schema for pools, memberships, join requests, and approvals, with that model used as the target source of truth.
+- The backend test suite has been extended to cover the new routes, notification durability path, and transaction boundary.
+- `npm run test` is green.
+- `npm run lint` is green.
+- `npm run build` is green.
+- A report is written describing what was centralized, what was moved into the DB layer, how notification durability was improved, how the normalized schema works, and any residual risks.
+
+================================
+DELIVERABLES
+================================
+
+Required deliverables:
+- new or updated backend route files for trip writes
+- updated web client mutation flows
+- updated iOS client mutation flows
+- durable notification job/outbox schema or equivalent persistence model
+- backend notification enqueue/processing path
+- SQL migration or SQL artifact for match transition RPC
+- normalized schema migration or SQL artifact for pools/memberships/join requests/approvals
+- repository/backend wrapper code for the RPC
+- updated backend tests
+- updated documentation/report
+
+Recommended report filename:
+- `BACKEND_TRANSACTION_REPORT.md`
+
+================================
+EXECUTION ORDER
+================================
+
+Execute in this order:
+
+1. Audit current direct-write paths in web and iOS.
+2. Audit current client-triggered notification paths.
+3. Add server routes for trip create/update/delete/status.
+4. Move web mutation flows to those routes.
+5. Move iOS mutation flows to those routes.
+6. Add durable notification enqueue/processing flow.
+7. Design the normalized relational schema for pools, memberships, join requests, and approvals.
+8. Add the transactional DB/RPC match transition layer on top of that schema.
+9. Replace the route’s primary mutation path with the RPC-backed path.
+10. Add tests and verification for all of the above.
+11. Run lint, tests, and build until green.
+12. Write the final report.
+
+================================
+FINAL INSTRUCTION
+================================
+
+Start now. Use the current hardened backend as your foundation. Centralize the remaining client-side writes behind backend endpoints, make notification triggering durable and retryable, replace the slot-column relationship model with a normalized pool/approval schema, move match transitions to a transaction-based DB boundary on top of that schema, extend the tests, and finish only when the repo is green and the remaining architectural weakness has been materially reduced.

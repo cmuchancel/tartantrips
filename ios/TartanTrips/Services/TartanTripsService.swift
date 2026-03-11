@@ -40,6 +40,12 @@ struct MatchRequestResponse: Decodable {
     let error: String?
 }
 
+private struct TripMutationResponse: Decodable {
+    let ok: Bool?
+    let tripId: UUID?
+    let error: String?
+}
+
 private struct APIErrorEnvelope: Decodable {
     let error: String?
     let message: String?
@@ -144,46 +150,36 @@ final class TartanTripsService {
         )
     }
 
-    func saveTrip(payload: TripPayload, existingTripID: UUID?) async throws -> UUID {
+    func saveTrip(payload: TripPayload, existingTripID: UUID?, accessToken: String) async throws -> UUID {
         if let existingTripID {
-            _ = try await restRequestRaw(
-                path: "/rest/v1/trips",
+            let response: TripMutationResponse = try await backendRequest(
+                path: "/api/trips/\(existingTripID.uuidString)",
                 method: "PATCH",
-                queryItems: [
-                    URLQueryItem(name: "id", value: "eq.\(existingTripID.uuidString)"),
-                    URLQueryItem(name: "user_email", value: "eq.\(payload.userEmail)")
-                ],
                 body: payload,
-                authToken: nil
+                accessToken: accessToken
             )
-            return existingTripID
+            return response.tripId ?? existingTripID
         }
 
-        struct InsertedTrip: Decodable { let id: UUID }
-        let response: [InsertedTrip] = try await restRequest(
-            path: "/rest/v1/trips",
+        let response: TripMutationResponse = try await backendRequest(
+            path: "/api/trips",
             method: "POST",
-            queryItems: [URLQueryItem(name: "select", value: "id")],
-            body: [payload],
-            authToken: nil
+            body: payload,
+            accessToken: accessToken
         )
 
-        guard let trip = response.first else {
+        guard let tripID = response.tripId else {
             throw NSError(domain: "TartanTrips", code: 1002, userInfo: [NSLocalizedDescriptionKey: "Trip insert failed"])
         }
 
-        return trip.id
+        return tripID
     }
 
-    func deleteTrip(id: UUID, email: String) async throws {
-        _ = try await restRequestRaw(
-            path: "/rest/v1/trips",
+    func deleteTrip(id: UUID, accessToken: String) async throws {
+        let _: TripMutationResponse = try await backendRequest(
+            path: "/api/trips/\(id.uuidString)",
             method: "DELETE",
-            queryItems: [
-                URLQueryItem(name: "id", value: "eq.\(id.uuidString)"),
-                URLQueryItem(name: "user_email", value: "eq.\(email)")
-            ],
-            authToken: nil
+            accessToken: accessToken
         )
     }
 
@@ -246,15 +242,6 @@ final class TartanTripsService {
             let apiError = try? jsonDecoder.decode(MatchRequestResponse.self, from: data)
             throw NSError(domain: "TartanTrips", code: 1201, userInfo: [NSLocalizedDescriptionKey: apiError?.error ?? "Trip status sync failed"])
         }
-    }
-
-    func triggerMatchNotifications(tripID: UUID) async {
-        let endpoint = config.apiBaseURL.appending(path: "/api/match-notifications")
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? jsonEncoder.encode(["tripId": tripID.uuidString])
-        _ = try? await URLSession.shared.data(for: request)
     }
 
     private func restRequest<T: Decodable>(
@@ -359,6 +346,56 @@ final class TartanTripsService {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
+        request.httpBody = bodyData
+        return request
+    }
+
+    private func backendRequest<T: Decodable>(
+        path: String,
+        method: String,
+        accessToken: String
+    ) async throws -> T {
+        let request = try buildBackendRequest(
+            path: path,
+            method: method,
+            accessToken: accessToken,
+            bodyData: nil
+        )
+
+        let data = try await perform(request)
+        return try jsonDecoder.decode(T.self, from: data)
+    }
+
+    private func backendRequest<T: Decodable, Body: Encodable>(
+        path: String,
+        method: String,
+        body: Body,
+        accessToken: String
+    ) async throws -> T {
+        let bodyData = try jsonEncoder.encode(body)
+        let request = try buildBackendRequest(
+            path: path,
+            method: method,
+            accessToken: accessToken,
+            bodyData: bodyData
+        )
+
+        let data = try await perform(request)
+        return try jsonDecoder.decode(T.self, from: data)
+    }
+
+    private func buildBackendRequest(
+        path: String,
+        method: String,
+        accessToken: String,
+        bodyData: Data?
+    ) throws -> URLRequest {
+        let url = config.apiBaseURL.appending(path: path)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.httpBody = bodyData
         return request
     }

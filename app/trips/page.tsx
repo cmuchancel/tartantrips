@@ -177,12 +177,6 @@ const windowsOverlap = (
   return aStartDate <= bEndDate && aEndDate >= bStartDate;
 };
 
-const TRIP_STATUS_OPTIONS = [
-  "Unmatched (looking for matches)",
-  "Matched and still looking",
-  "Matched and satisfied"
-] as const;
-
 const TRIP_STATUS_STEPS = [
   {
     value: "Unmatched (looking for matches)",
@@ -196,11 +190,6 @@ const TRIP_STATUS_STEPS = [
     value: "Matched and satisfied",
     label: "Matched · Done"
   }
-] as const;
-
-const MATCHED_TRIP_STATUS_OPTIONS: readonly string[] = [
-  "Matched and still looking",
-  "Matched and satisfied"
 ] as const;
 
 function TripsPageContent() {
@@ -521,73 +510,60 @@ function TripsPageContent() {
     setLoadingTrips(false);
   };
 
+  const getAccessToken = async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    return sessionData?.session?.access_token ?? "";
+  };
+
   const handleDeleteTrip = async (tripId: string) => {
-    if (!email) {
+    const accessToken = await getAccessToken();
+    if (!email || !accessToken) {
+      setError("We couldn't confirm your session. Please log in again.");
       return;
     }
 
-    const { error: deleteError } = await supabase
-      .from("trips")
-      .delete()
-      .eq("id", tripId)
-      .eq("user_email", email);
+    setUpdatingTripId(tripId);
+    const response = await fetch(`/api/trips/${tripId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+    const result = await response.json().catch(() => null);
 
-    if (deleteError) {
-      setError(deleteError.message);
+    if (!response.ok) {
+      setError(result?.error || "Unable to delete trip.");
+      setUpdatingTripId(null);
       return;
     }
 
     fetchTrips(email);
+    setUpdatingTripId(null);
   };
 
   const updateTripStatus = async (
     tripId: string,
     updates: Partial<Pick<TripRecord, "trip_status" | "landed_status" | "meetup_status">>
   ) => {
-    if (!email) {
-      return;
-    }
-
-    if (
-      updates.trip_status &&
-      MATCHED_TRIP_STATUS_OPTIONS.includes(updates.trip_status as string)
-    ) {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token;
-
-      if (!accessToken) {
-        setError("We couldn't confirm your session. Please log in again.");
-        return;
-      }
-
-      const response = await fetch("/api/trip-status-sync", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({ tripId, trip_status: updates.trip_status })
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        setError(data?.error || "Unable to sync trip status.");
-        return;
-      }
-
-      fetchTrips(email);
+    const accessToken = await getAccessToken();
+    if (!email || !accessToken) {
+      setError("We couldn't confirm your session. Please log in again.");
       return;
     }
 
     setUpdatingTripId(tripId);
-    const { error: updateError } = await supabase
-      .from("trips")
-      .update(updates)
-      .eq("id", tripId)
-      .eq("user_email", email);
+    const response = await fetch(`/api/trips/${tripId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(updates)
+    });
+    const result = await response.json().catch(() => null);
 
-    if (updateError) {
-      setError(updateError.message);
+    if (!response.ok) {
+      setError(result?.error || "Unable to update trip.");
       setUpdatingTripId(null);
       return;
     }

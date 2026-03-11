@@ -158,6 +158,11 @@ export default function PitUnmatchedPage() {
     setProfile((prev) => ({ ...prev, [key]: value }));
   };
 
+  const getAccessToken = async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    return sessionData?.session?.access_token ?? "";
+  };
+
   const handleProfileSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setProfileError("");
@@ -280,25 +285,36 @@ export default function PitUnmatchedPage() {
     const flightDate = formatDateEST(nowEST);
     const flightTime = formatTimeEST(nowEST);
     const willingToWaitUntil = formatTimeEST(windowEnd);
+    const accessToken = await getAccessToken();
+
+    if (!accessToken) {
+      setSubmitError("We couldn't confirm your session. Please log in again.");
+      return;
+    }
 
     setSubmitting(true);
     const payload = {
-      user_email: email,
       direction: "Arriving to Pittsburgh",
       flight_date: flightDate,
       flight_time: flightTime,
       allowed_partner_sex: "Any",
       willing_to_wait_until_time: willingToWaitUntil,
       min_hours_before: null,
-      max_hours_before: null,
-      window_start: nowEST.toISOString(),
-      window_end: windowEnd.toISOString()
+      max_hours_before: null
     };
 
-    const { error: insertError } = await supabase.from("trips").insert(payload);
+    const response = await fetch("/api/trips", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json().catch(() => null);
 
-    if (insertError) {
-      setSubmitError(insertError.message);
+    if (!response.ok) {
+      setSubmitError(result?.error || "Unable to save your arrival window.");
       setSubmitting(false);
       return;
     }

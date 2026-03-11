@@ -125,8 +125,11 @@ final class AppState {
         defer { isWorking = false }
 
         do {
-            let tripID = try await service.saveTrip(payload: payload, existingTripID: existingTripID)
-            await service.triggerMatchNotifications(tripID: tripID)
+            let tripID = try await service.saveTrip(
+                payload: payload,
+                existingTripID: existingTripID,
+                accessToken: accessToken
+            )
             trips = try await service.fetchTrips(email: email)
             infoMessage = existingTripID == nil ? "Trip created." : "Trip updated."
             errorMessage = ""
@@ -140,7 +143,7 @@ final class AppState {
         defer { isWorking = false }
 
         do {
-            try await service.deleteTrip(id: tripID, email: email)
+            try await service.deleteTrip(id: tripID, accessToken: accessToken)
             trips.removeAll { $0.id == tripID }
             infoMessage = "Trip deleted."
             errorMessage = ""

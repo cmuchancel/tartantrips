@@ -278,6 +278,11 @@ function PlanTripPageContent() {
     setProfile((prev) => ({ ...prev, [key]: value }));
   };
 
+  const getAccessToken = async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    return sessionData?.session?.access_token ?? "";
+  };
+
   const handleProfileSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setProfileError("");
@@ -431,73 +436,52 @@ function PlanTripPageContent() {
       return;
     }
 
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      setError("We couldn't confirm your session. Please log in again.");
+      return;
+    }
+
     setSaving(true);
     const payload = {
-      user_email: email,
       direction: form.direction,
       flight_date: form.flightDate,
       flight_time: form.flightTime,
-      allowed_partner_sex: form.allowedPartnerSex,
-      trip_status: "Unmatched (looking for matches)",
-      landed_status: form.direction === "Arriving to Pittsburgh" ? "Not landed yet" : null,
-      meetup_status: form.direction === "Arriving to Pittsburgh" ? "Looking for match" : null,
+      allowed_partner_sex: form.allowedPartnerSex || "Any",
       willing_to_wait_until_time: computed.willingToWaitUntil,
       min_hours_before: computed.minHoursBefore,
-      max_hours_before: computed.maxHoursBefore,
-      window_start: computed.windowStart?.toISOString(),
-      window_end: computed.windowEnd?.toISOString()
+      max_hours_before: computed.maxHoursBefore
     };
 
-    const notifyMatches = async (tripId: string) => {
-      try {
-        await fetch("/api/match-notifications", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tripId })
-        });
-      } catch (notifyError) {
-        setError("Saved trip, but failed to trigger notifications.");
-      }
-    };
+    const endpoint = editingTripId ? `/api/trips/${editingTripId}` : "/api/trips";
+    const response = await fetch(endpoint, {
+      method: editingTripId ? "PATCH" : "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setError(result?.error || "Unable to save trip.");
+      setSaving(false);
+      return;
+    }
+
+    const savedTripId = result?.tripId || editingTripId;
 
     if (editingTripId) {
-      const { error: updateError } = await supabase
-        .from("trips")
-        .update(payload)
-        .eq("id", editingTripId)
-        .eq("user_email", email);
-
-      if (updateError) {
-        setError(updateError.message);
-        setSaving(false);
-        return;
-      }
-
       setSuccess("Trip updated.");
-      notifyMatches(editingTripId);
       setEditingTripId(null);
-      router.replace(`/trips?tripId=${editingTripId}`);
-    } else {
-      const { data: insertedTrip, error: insertError } = await supabase
-        .from("trips")
-        .insert(payload)
-        .select("id")
-        .single();
-
-      if (insertError) {
-        setError(insertError.message);
-        setSaving(false);
-        return;
-      }
-
-      if (insertedTrip?.id) {
-        notifyMatches(insertedTrip.id);
-        router.replace(`/trips?tripId=${insertedTrip.id}`);
-      }
     }
 
     setForm(initialFormState);
     fetchTrips(email);
+    if (savedTripId) {
+      router.replace(`/trips?tripId=${savedTripId}`);
+    }
     setSaving(false);
   };
 
